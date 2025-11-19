@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { Search, Loader2, X, Sparkles, TrendingUp } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -28,8 +28,7 @@ export function SearchBar({
   showSuggestions = true,
 }: SearchBarProps) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const [query, setQuery] = useState(defaultValue || searchParams.get('q') || '')
+  const [query, setQuery] = useState(defaultValue)
   const [isSearching, setIsSearching] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [trendingSearches, setTrendingSearches] = useState<string[]>([])
