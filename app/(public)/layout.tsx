@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ROUTES } from '@/lib/constants'
+import { UserMenu } from '@/components/shared/user-menu'
 
 export default function PublicLayout({
   children,
@@ -40,21 +41,8 @@ export default function PublicLayout({
               </Link>
             </nav>
 
-            {/* Auth Buttons */}
-            <div className="flex items-center gap-3">
-              <Link 
-                href={ROUTES.LOGIN}
-                className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              >
-                Войти
-              </Link>
-              <Link 
-                href={ROUTES.SIGNUP}
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
-              >
-                Регистрация
-              </Link>
-            </div>
+            {/* User Menu */}
+            <UserMenu />
           </div>
         </div>
       </header>

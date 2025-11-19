@@ -1,11 +1,45 @@
+'use client'
+
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 import { ROUTES } from '@/lib/constants'
+import { useUser } from '@/lib/hooks/useUser'
+import { UserMenu } from '@/components/shared/user-menu'
+import { Loader2 } from 'lucide-react'
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const { isAuthenticated, isLoading } = useUser()
+  const router = useRouter()
+
+  // Защита маршрутов - редирект на логин если не авторизован
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/login?redirect=/dashboard')
+    }
+  }, [isAuthenticated, isLoading, router])
+
+  // Показываем загрузку во время проверки авторизации
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+          <p className="mt-4 text-sm text-muted-foreground">Загрузка...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Если не авторизован, ничего не рендерим (будет редирект)
+  if (!isAuthenticated) {
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Header */}
@@ -42,6 +76,9 @@ export default function DashboardLayout({
                 Настройки
               </Link>
             </nav>
+
+            {/* User Menu */}
+            <UserMenu />
           </div>
         </div>
       </header>
