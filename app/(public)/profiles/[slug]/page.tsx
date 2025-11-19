@@ -77,7 +77,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
 
           {/* Отзывы */}
           <div>
-            <ProfileReviews />
+            <ProfileReviews profileId={profile.id} />
           </div>
         </div>
       </div>
