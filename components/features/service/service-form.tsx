@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { createBrowserClient } from '@supabase/ssr'
+import { toast } from 'sonner'
 import { 
   Loader2, 
   AlertCircle, 
@@ -181,10 +182,18 @@ export function ServiceForm() {
         throw new Error(result.error || 'Ошибка создания услуги')
       }
 
-      // Успех! Редирект на список услуг
+      // Успех!
+      toast.success('Услуга создана!', {
+        description: 'Услуга успешно добавлена в ваш профиль',
+      })
+      
+      // Редирект на список услуг
       router.push('/services')
     } catch (err: any) {
       console.error('Create service error:', err)
+      toast.error('Ошибка создания услуги', {
+        description: err.message || 'Попробуйте позже',
+      })
       setError(err.message || 'Ошибка создания услуги')
     } finally {
       setIsLoading(false)

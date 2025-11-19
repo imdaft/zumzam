@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, Edit, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { useUser } from '@/lib/hooks/useUser'
+import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -87,9 +89,19 @@ export default function ServicesPage() {
         setServices(services.filter(s => s.id !== serviceToDelete))
         setDeleteDialogOpen(false)
         setServiceToDelete(null)
+        toast.success('Услуга удалена', {
+          description: 'Услуга успешно удалена из вашего профиля',
+        })
+      } else {
+        toast.error('Ошибка удаления', {
+          description: 'Не удалось удалить услугу',
+        })
       }
     } catch (error) {
       console.error('Error deleting service:', error)
+      toast.error('Ошибка удаления', {
+        description: 'Произошла ошибка при удалении услуги',
+      })
     }
   }
 
@@ -106,9 +118,24 @@ export default function ServicesPage() {
         setServices(services.map(s =>
           s.id === id ? { ...s, active: !currentActive } : s
         ))
+        toast.success(
+          !currentActive ? 'Услуга активирована' : 'Услуга скрыта',
+          {
+            description: !currentActive 
+              ? 'Услуга теперь видна в каталоге'
+              : 'Услуга скрыта из каталога',
+          }
+        )
+      } else {
+        toast.error('Ошибка обновления', {
+          description: 'Не удалось обновить статус услуги',
+        })
       }
     } catch (error) {
       console.error('Error toggling service:', error)
+      toast.error('Ошибка обновления', {
+        description: 'Произошла ошибка при обновлении услуги',
+      })
     }
   }
 
@@ -170,18 +197,13 @@ export default function ServicesPage() {
 
       {/* Пустой список */}
       {!isLoading && services.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Plus className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Нет услуг</h3>
-            <p className="text-muted-foreground mb-4">
-              Добавьте первую услугу, чтобы родители могли вас найти
-            </p>
-            <Button asChild>
-              <Link href="/services/create">Добавить услугу</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Plus}
+          title="Нет услуг"
+          description="Добавьте первую услугу, чтобы родители могли вас найти"
+          actionLabel="Добавить услугу"
+          actionHref="/services/create"
+        />
       )}
 
       {/* Список услуг */}

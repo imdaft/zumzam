@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { ServiceCard } from '@/components/features/service/service-card'
 import { ServiceFilters, type ServiceFilters as Filters } from '@/components/features/service/service-filters'
+import { ServiceCardSkeleton } from '@/components/shared/skeletons'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -82,10 +83,12 @@ export default function ServicesPage() {
 
           {/* Контент */}
           <main>
-            {/* Загрузка */}
+            {/* Загрузка с skeleton */}
             {isLoading && page === 0 && (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <ServiceCardSkeleton key={i} />
+                ))}
               </div>
             )}
 
