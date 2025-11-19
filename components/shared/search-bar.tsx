@@ -1,126 +1,135 @@
 'use client'
 
-import { useState } from 'react'
-import { Search, MapPin, Calendar, Users } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Search, Loader2, X } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface SearchBarProps {
-  onSearch?: (params: SearchParams) => void
+  defaultValue?: string
+  onSearch?: (query: string) => void
   variant?: 'default' | 'compact'
+  placeholder?: string
+  autoFocus?: boolean
 }
 
-interface SearchParams {
-  query: string
-  city: string
-  date?: string
-  children?: number
-}
+/**
+ * Компонент поисковой строки с debounce
+ */
+export function SearchBar({
+  defaultValue = '',
+  onSearch,
+  variant = 'default',
+  placeholder = 'Поиск услуг, студий, аниматоров...',
+  autoFocus = false,
+}: SearchBarProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [query, setQuery] = useState(defaultValue || searchParams.get('q') || '')
+  const [isSearching, setIsSearching] = useState(false)
 
-export function SearchBar({ onSearch, variant = 'default' }: SearchBarProps) {
-  const [query, setQuery] = useState('')
-  const [city, setCity] = useState('')
-  const [isExpanded, setIsExpanded] = useState(false)
+  // Debounce поиска
+  useEffect(() => {
+    if (!query) {
+      setIsSearching(false)
+      return
+    }
 
-  const handleSearch = () => {
+    setIsSearching(true)
+    const timeoutId = setTimeout(() => {
+      if (onSearch) {
+        onSearch(query)
+      } else {
+        // Редирект на страницу поиска
+        router.push(`/search?q=${encodeURIComponent(query)}`)
+      }
+      setIsSearching(false)
+    }, 500) // 500ms debounce
+
+    return () => clearTimeout(timeoutId)
+  }, [query, onSearch, router])
+
+  const handleClear = () => {
+    setQuery('')
     if (onSearch) {
-      onSearch({ query, city })
+      onSearch('')
+    }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (query.trim()) {
+      if (onSearch) {
+        onSearch(query)
+      } else {
+        router.push(`/search?q=${encodeURIComponent(query)}`)
+      }
     }
   }
 
   if (variant === 'compact') {
     return (
-      <div className="w-full max-w-2xl mx-auto">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Найти аниматора, студию или мероприятие..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            className="w-full pl-12 pr-4 py-4 text-base border-2 border-slate-200 rounded-2xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none transition-all bg-white shadow-sm hover:shadow-md"
-          />
-        </div>
-      </div>
+      <form onSubmit={handleSubmit} className="relative w-full max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          type="search"
+          placeholder={placeholder}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-9 pr-9"
+          autoFocus={autoFocus}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+        {isSearching && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        )}
+      </form>
     )
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
-      <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-2">
-        <div className="flex flex-col md:flex-row gap-2">
-          {/* Что ищем */}
-          <div className="flex-1 relative group">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors">
-              <Search className="h-5 w-5" />
-            </div>
-            <input
-              type="text"
-              placeholder="Что ищете? (например: пиратская вечеринка)"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => setIsExpanded(true)}
-              className="w-full pl-12 pr-4 py-4 text-base rounded-2xl hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-
-          {/* Город */}
-          <div className="flex-1 relative group">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors">
-              <MapPin className="h-5 w-5" />
-            </div>
-            <input
-              type="text"
-              placeholder="Город"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              onFocus={() => setIsExpanded(true)}
-              className="w-full pl-12 pr-4 py-4 text-base rounded-2xl hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-
-          {/* Кнопка поиска */}
-          <button
-            onClick={handleSearch}
-            className="md:w-auto px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-2xl transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 group"
-          >
-            <Search className="h-5 w-5 group-hover:scale-110 transition-transform" />
-            <span className="hidden md:inline">Найти</span>
-          </button>
+    <form onSubmit={handleSubmit} className="w-full">
+      <div className="relative">
+        <div className="flex items-center gap-2 rounded-lg border bg-white p-2 shadow-lg dark:bg-slate-800">
+          <Search className="ml-2 h-5 w-5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder={placeholder}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="flex-1 border-0 bg-transparent px-2 focus-visible:ring-0"
+            autoFocus={autoFocus}
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+          {isSearching && (
+            <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
+          )}
+          {!isSearching && (
+            <Button type="submit" size="sm" className="mr-1">
+              Найти
+            </Button>
+          )}
         </div>
-
-        {/* Расширенные фильтры */}
-        {isExpanded && (
-          <div className="mt-4 pt-4 border-t border-slate-200 flex flex-wrap gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-            <button className="px-4 py-2 rounded-full border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 transition-colors flex items-center gap-2 text-sm font-medium">
-              <Calendar className="h-4 w-4" />
-              Дата
-            </button>
-            <button className="px-4 py-2 rounded-full border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 transition-colors flex items-center gap-2 text-sm font-medium">
-              <Users className="h-4 w-4" />
-              Количество детей
-            </button>
-            <button className="px-4 py-2 rounded-full border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 transition-colors text-sm font-medium">
-              Возраст
-            </button>
-            <button className="px-4 py-2 rounded-full border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 transition-colors text-sm font-medium">
-              Бюджет
-            </button>
-          </div>
-        )}
       </div>
-
-      {/* Быстрые теги */}
-      <div className="mt-4 flex flex-wrap gap-2 justify-center">
-        {['Аниматоры', 'Химическое шоу', 'Фотограф', 'Квест', 'Батуты'].map((tag) => (
-          <button
-            key={tag}
-            className="px-4 py-2 rounded-full bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 text-sm font-medium transition-all shadow-sm hover:shadow-md"
-          >
-            {tag}
-          </button>
-        ))}
-      </div>
-    </div>
+    </form>
   )
 }
-

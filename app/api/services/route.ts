@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   const city = searchParams.get('city')
   const active = searchParams.get('active')
   const featured = searchParams.get('featured')
+  const q = searchParams.get('q') // Поисковый запрос
   const limit = parseInt(searchParams.get('limit') || '20')
   const offset = parseInt(searchParams.get('offset') || '0')
 
@@ -46,6 +47,11 @@ export async function GET(request: Request) {
     }
     if (featured === 'true') {
       query = query.eq('featured', true)
+    }
+    
+    // Keyword поиск по title, description, tags
+    if (q) {
+      query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,tags.cs.{${q}}`)
     }
     
     // Фильтр по городу через профиль
