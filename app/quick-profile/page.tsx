@@ -29,18 +29,11 @@ export default function QuickProfilePage() {
     
     e.preventDefault()
     
-    console.log('[handleCreate] User:', user)
+    console.log('[handleCreate] User from hook:', user)
     console.log('[handleCreate] Display name:', displayName)
     console.log('[handleCreate] Slug:', slug)
     
-    if (!user) {
-      console.error('[handleCreate] ERROR: No user!')
-      setError('Нужно войти')
-      return
-    }
-
-    console.log('[handleCreate] Starting profile creation...')
-    setStatus('Создаю...')
+    setStatus('Получаю пользователя...')
     setError('')
 
     try {
@@ -49,8 +42,21 @@ export default function QuickProfilePage() {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       )
 
+      // Получаем текущего пользователя напрямую
+      console.log('[handleCreate] Fetching current user...')
+      const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser()
+      
+      console.log('[handleCreate] Auth result:', currentUser ? `ID: ${currentUser.id}` : 'NULL', 'Error:', authError?.message || 'NONE')
+
+      if (authError || !currentUser) {
+        throw new Error(authError?.message || 'Не удалось получить пользователя. Войдите заново.')
+      }
+
+      console.log('[handleCreate] Starting profile creation...')
+      setStatus('Создаю профиль...')
+
       const profileData = {
-        user_id: user.id,
+        user_id: currentUser.id,
         display_name: displayName,
         slug: slug || displayName.toLowerCase().replace(/\s+/g, '-'),
         bio: bio || 'Описание отсутствует',
@@ -58,7 +64,7 @@ export default function QuickProfilePage() {
         city: city,
         tags: ['детские праздники'],
         price_range: '$$',
-        email: user.email || '',
+        email: currentUser.email || '',
         active: true,
         verified: false,
       }
@@ -172,19 +178,19 @@ export default function QuickProfilePage() {
 
         <button
           type="submit"
-          disabled={!displayName || !slug || !user}
+          disabled={!displayName || !slug}
           style={{
             padding: '0.75rem',
-            background: !displayName || !slug || !user ? '#ccc' : '#0070f3',
+            background: !displayName || !slug ? '#ccc' : '#0070f3',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
-            cursor: !displayName || !slug || !user ? 'not-allowed' : 'pointer',
+            cursor: !displayName || !slug ? 'not-allowed' : 'pointer',
             fontSize: '1rem',
             fontWeight: 'bold',
           }}
         >
-          Создать профиль
+          Создать профиль {!user && '(без user - для теста)'}
         </button>
       </form>
 
