@@ -12,3 +12,4 @@ Disallow: /api/
 # Sitemap
 Sitemap: https://detinarakete.ru/sitemap.xml
 
+

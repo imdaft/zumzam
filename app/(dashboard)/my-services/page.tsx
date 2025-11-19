@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { Plus, Edit, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useUser } from '@/lib/hooks/useUser'
@@ -49,7 +48,6 @@ interface Service {
  * Страница управления услугами в dashboard
  */
 export default function ServicesPage() {
-  const router = useRouter()
   const { user, profile } = useUser()
   const [services, setServices] = useState<Service[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -181,7 +179,7 @@ export default function ServicesPage() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/services/create">
+          <Link href="/my-services/create">
             <Plus className="mr-2 h-4 w-4" />
             Добавить услугу
           </Link>
@@ -284,7 +282,7 @@ export default function ServicesPage() {
                   className="flex-1"
                   asChild
                 >
-                  <Link href={`/services/${service.id}/edit`}>
+                  <Link href={`/my-services/${service.id}/edit`}>
                     <Edit className="mr-2 h-4 w-4" />
                     Редактировать
                   </Link>

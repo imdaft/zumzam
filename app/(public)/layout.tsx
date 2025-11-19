@@ -2,6 +2,9 @@ import Link from 'next/link'
 import { ROUTES } from '@/lib/constants'
 import { UserMenu } from '@/components/shared/user-menu'
 
+// Отключаем статическую генерацию для всех public страниц
+export const dynamic = 'force-dynamic'
+
 export default function PublicLayout({
   children,
 }: {

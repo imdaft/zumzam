@@ -245,3 +245,4 @@ export const DURATIONS = [
   { label: 'Целый день (8+ часов)', value: 480 },
 ]
 
+

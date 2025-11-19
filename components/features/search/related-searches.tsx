@@ -73,3 +73,4 @@ export function RelatedSearches({ currentQuery, onSearchClick }: RelatedSearches
   )
 }
 
+
