@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { ProfileHeader } from '@/components/features/profile/profile-header'
 import { ProfileGallery } from '@/components/features/profile/profile-gallery'
 import { ProfileReviews } from '@/components/features/profile/profile-reviews'
+import { ChatWidget } from '@/components/features/ai/chat-widget'
 import { 
   Card, 
   CardContent, 
@@ -80,6 +81,12 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
           </div>
         </div>
       </div>
+      
+      {/* AI Chat Widget */}
+      <ChatWidget 
+        profileId={profile.id} 
+        profileName={profile.display_name}
+      />
     </div>
   )
 }
