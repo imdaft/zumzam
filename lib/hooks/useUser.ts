@@ -21,48 +21,59 @@ export function useUser() {
     // Получаем текущего пользователя при монтировании
     const initializeAuth = async () => {
       try {
+        console.log('[useUser] 1. Starting auth initialization...')
         setLoading(true)
         
         const {
           data: { user: authUser },
         } = await supabase.auth.getUser()
 
+        console.log('[useUser] 2. Auth user:', authUser ? `ID: ${authUser.id}, Email: ${authUser.email}` : 'NULL')
+
         if (authUser) {
           setUser(authUser)
 
           // Загружаем расширенный профиль из таблицы users
+          console.log('[useUser] 3. Fetching from public.users...')
           const { data: userData, error } = await supabase
             .from('users')
             .select('*')
             .eq('id', authUser.id)
             .single()
 
+          console.log('[useUser] 4. DB result - Data:', userData ? 'EXISTS' : 'NULL', 'Error:', error?.code || 'NONE')
+
           if (error) {
-            console.error('Error fetching user profile:', error)
+            console.error('[useUser] Error fetching user profile:', error)
             // Если запись не найдена, создаем базовый профиль
             if (error.code === 'PGRST116') {
-              console.log('User record not found, using auth data only')
-              setProfile({
+              console.log('[useUser] 5a. User record not found, creating fallback profile')
+              const fallbackProfile = {
                 id: authUser.id,
                 email: authUser.email || '',
                 full_name: authUser.user_metadata?.full_name || null,
                 avatar_url: authUser.user_metadata?.avatar_url || null,
                 phone: authUser.user_metadata?.phone || null,
-                role: 'client',
+                role: 'parent',
                 created_at: authUser.created_at,
                 updated_at: new Date().toISOString(),
-              } as AppUser)
+              } as AppUser
+              console.log('[useUser] 5b. Fallback profile:', fallbackProfile)
+              setProfile(fallbackProfile)
             }
           } else if (userData) {
+            console.log('[useUser] 5c. Setting profile from DB:', userData)
             setProfile(userData as AppUser)
           }
         } else {
+          console.log('[useUser] 6. No auth user, resetting')
           reset()
         }
       } catch (error) {
-        console.error('Error initializing auth:', error)
+        console.error('[useUser] Exception during initialization:', error)
         reset()
       } finally {
+        console.log('[useUser] 7. Initialization complete, setting loading=false')
         setLoading(false)
         setInitialized(true)
       }
