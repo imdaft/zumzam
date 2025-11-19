@@ -28,6 +28,13 @@ export default function PublicLayout({
                 Поиск
               </Link>
               <Link 
+                href="/scenario-generator"
+                className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors flex items-center gap-1"
+              >
+                <span>✨</span>
+                Генератор сценариев
+              </Link>
+              <Link 
                 href="/#how-it-works"
                 className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
               >
