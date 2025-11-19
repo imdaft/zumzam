@@ -29,14 +29,24 @@ export default function QuickProfilePage() {
     console.log('[handleCreate] Display name:', displayName)
     console.log('[handleCreate] Slug:', slug)
     
-    setStatus('Получаю пользователя...')
+    setStatus('Проверяю сессию...')
     setError('')
 
     try {
       const supabase = createClient()
 
+      // СНАЧАЛА проверим есть ли сессия вообще
+      console.log('[handleCreate] Checking session...')
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      console.log('[handleCreate] Session check:', session ? 'EXISTS' : 'NULL', sessionError?.message || '')
+      
+      if (!session) {
+        throw new Error('Нет активной сессии! Пожалуйста, сначала войдите через /login или /quick-login')
+      }
+
       // Получаем текущего пользователя напрямую
       console.log('[handleCreate] Fetching current user...')
+      setStatus('Получаю пользователя...')
       const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser()
       
       console.log('[handleCreate] Auth result:', currentUser ? `ID: ${currentUser.id}` : 'NULL', 'Error:', authError?.message || 'NONE')
@@ -94,6 +104,28 @@ export default function QuickProfilePage() {
     <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto', fontFamily: 'system-ui' }}>
       <h1>🚀 Быстрое создание профиля</h1>
       <p style={{ color: '#666', marginBottom: '2rem' }}>Минимальная форма для тестирования</p>
+
+      {/* ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ */}
+      <div style={{ 
+        padding: '1.5rem', 
+        background: '#fff3cd', 
+        border: '2px solid #ffc107', 
+        borderRadius: '8px', 
+        marginBottom: '2rem',
+        fontSize: '0.95rem'
+      }}>
+        <p style={{ margin: 0, fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.5rem' }}>
+          ⚠️ ВАЖНО: СНАЧАЛА НУЖНО ВОЙТИ!
+        </p>
+        <p style={{ margin: 0, marginBottom: '0.5rem' }}>
+          Для создания профиля нужна активная сессия.
+        </p>
+        <p style={{ margin: 0 }}>
+          <strong>Шаг 1:</strong> <a href="/quick-login" style={{ color: '#0070f3', textDecoration: 'underline' }}>Войдите через /quick-login</a>
+          <br />
+          <strong>Шаг 2:</strong> Вернитесь сюда и создайте профиль
+        </p>
+      </div>
 
       <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div>
