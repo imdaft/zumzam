@@ -17,13 +17,29 @@ export default function QuickProfilePage() {
   const [description, setDescription] = useState('')
   const [city, setCity] = useState('Москва')
 
+  console.log('[QuickProfile] Component rendered')
+  console.log('[QuickProfile] User:', user?.id, user?.email)
+  console.log('[QuickProfile] Display name:', displayName)
+  console.log('[QuickProfile] Slug:', slug)
+
   const handleCreate = async (e: React.FormEvent) => {
+    console.log('========================================')
+    console.log('[handleCreate] BUTTON CLICKED!')
+    console.log('[handleCreate] Event:', e)
+    
     e.preventDefault()
+    
+    console.log('[handleCreate] User:', user)
+    console.log('[handleCreate] Display name:', displayName)
+    console.log('[handleCreate] Slug:', slug)
+    
     if (!user) {
+      console.error('[handleCreate] ERROR: No user!')
       setError('Нужно войти')
       return
     }
 
+    console.log('[handleCreate] Starting profile creation...')
     setStatus('Создаю...')
     setError('')
 
