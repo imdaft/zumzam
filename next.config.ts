@@ -1,11 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  eslint: {
-    // Для production build игнорируем ошибки линтера
-    // (их нужно исправить позже, но для деплоя сейчас игнорируем)
-    ignoreDuringBuilds: true,
-  },
   typescript: {
     // Для production build игнорируем ошибки TypeScript
     // (их нужно исправить позже, но для деплоя сейчас игнорируем)
@@ -19,6 +14,10 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@xenova/transformers', 'sharp', 'onnxruntime-node', 'ffmpeg-static'],
   // Отключаем статическую оптимизацию для всех страниц
   output: undefined,
+  
+  // Используем webpack вместо Turbopack (для совместимости с существующей конфигурацией)
+  // Добавляем пустую конфигурацию turbopack, чтобы использовать webpack
+  turbopack: {},
   
   // Webpack конфигурация для игнорирования бинарных файлов
   webpack: (config, { isServer }) => {
