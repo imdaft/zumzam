@@ -33,6 +33,26 @@ export const SERVICE_TAGS = [
   'На улице'
 ] as const
 
+// Длительности услуг (в минутах)
+export const DURATIONS = [
+  { value: 30, label: '30 минут' },
+  { value: 60, label: '1 час' },
+  { value: 90, label: '1.5 часа' },
+  { value: 120, label: '2 часа' },
+  { value: 180, label: '3 часа' },
+  { value: 240, label: '4 часа' },
+  { value: 300, label: '5 часов' },
+] as const
+
+// Возрастные категории
+export const AGE_CATEGORIES = [
+  { value: '0-3', label: '0-3 года' },
+  { value: '3-6', label: '3-6 лет' },
+  { value: '6-10', label: '6-10 лет' },
+  { value: '10-14', label: '10-14 лет' },
+  { value: '14-18', label: '14-18 лет' },
+] as const
+
 // --- Base Service Schema ---
 export const baseServiceSchema = z.object({
   title: z.string().min(3, 'Минимум 3 символа').max(100), // Для формы

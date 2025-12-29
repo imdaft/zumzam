@@ -126,6 +126,11 @@ export async function removeFromCart(
   }
 }
 
+// Показать содержимое корзины (алиас для getCart)
+export async function showCart(userId: string): Promise<CartActionResult> {
+  return getCart(userId)
+}
+
 // Получить содержимое корзины
 export async function getCart(userId: string): Promise<CartActionResult> {
   try {
