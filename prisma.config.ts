@@ -9,6 +9,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: "postgresql://zumzam_admin:SCNK88tank33@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require",
+    url: process.env.DATABASE_URL || "",
   },
 });

@@ -73,7 +73,7 @@ WITH (lists = 100)
 
 ```bash
 # Вариант 1: Через psql
-psql "postgresql://zumzam_admin:SCNK88tank33@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require" -f scripts/apply-vector-search.sql
+psql "$DATABASE_URL" -f scripts/apply-vector-search.sql
 
 # Вариант 2: Через Node.js скрипт
 npx tsx scripts/apply-vector-search.ts

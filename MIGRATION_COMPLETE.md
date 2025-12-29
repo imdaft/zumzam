@@ -85,12 +85,12 @@
 
 ### `.env` (для Prisma CLI)
 ```env
-DATABASE_URL=postgresql://zumzam_admin:SCNK88tank33@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
+DATABASE_URL=postgresql://zumzam_admin:YOUR_PASSWORD@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
 ```
 
 ### `.env.local` (для Next.js)
 ```env
-DATABASE_URL=postgresql://zumzam_admin:SCNK88tank33@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
+DATABASE_URL=postgresql://zumzam_admin:YOUR_PASSWORD@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
 # ... остальные переменные
 ```
 
@@ -122,7 +122,7 @@ npx prisma generate        # Сгенерировать Prisma Client
 ### База данных
 ```bash
 # Подключение через psql
-docker run --rm -it -e PGPASSWORD=SCNK88tank33 postgres:15 psql \
+docker run --rm -it -e PGPASSWORD=YOUR_PASSWORD postgres:15 psql \
   -h rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net \
   -p 6432 \
   -U zumzam_admin \
@@ -248,12 +248,12 @@ docker run --rm -it -e PGPASSWORD=SCNK88tank33 postgres:15 psql \
 
 ### `.env` (для Prisma CLI)
 ```env
-DATABASE_URL=postgresql://zumzam_admin:SCNK88tank33@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
+DATABASE_URL=postgresql://zumzam_admin:YOUR_PASSWORD@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
 ```
 
 ### `.env.local` (для Next.js)
 ```env
-DATABASE_URL=postgresql://zumzam_admin:SCNK88tank33@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
+DATABASE_URL=postgresql://zumzam_admin:YOUR_PASSWORD@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
 # ... остальные переменные
 ```
 
@@ -285,7 +285,7 @@ npx prisma generate        # Сгенерировать Prisma Client
 ### База данных
 ```bash
 # Подключение через psql
-docker run --rm -it -e PGPASSWORD=SCNK88tank33 postgres:15 psql \
+docker run --rm -it -e PGPASSWORD=YOUR_PASSWORD postgres:15 psql \
   -h rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net \
   -p 6432 \
   -U zumzam_admin \

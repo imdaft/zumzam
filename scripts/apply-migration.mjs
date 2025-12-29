@@ -7,7 +7,7 @@ const client = new Client({
   host: 'rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net',
   port: 6432,
   user: 'zumzam_admin',
-  password: 'SCNK88tank33',
+  password: process.env.DB_PASSWORD || process.env.DATABASE_URL?.match(/:(.*)@/)?.[1] || '',
   database: 'zumzam',
   ssl: { rejectUnauthorized: false }
 })
@@ -54,7 +54,7 @@ const client = new Client({
   host: 'rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net',
   port: 6432,
   user: 'zumzam_admin',
-  password: 'SCNK88tank33',
+  password: process.env.DB_PASSWORD || process.env.DATABASE_URL?.match(/:(.*)@/)?.[1] || '',
   database: 'zumzam',
   ssl: { rejectUnauthorized: false }
 })

@@ -46,3 +46,6 @@ chrome-user-data/
 
 # uploaded files
 /public/uploads/
+
+# config files with potential secrets
+prisma.config.ts
