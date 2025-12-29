@@ -37,6 +37,9 @@ import { AgencyPartnersSection } from '@/components/features/agency/agency-partn
 import { AgencyCasesSection } from '@/components/features/agency/agency-cases-section'
 import { ProfileAnalyticsTracker } from '@/components/features/profile/profile-analytics-tracker'
 
+// Страница использует cookies (getCurrentUser), поэтому должна быть динамической
+export const dynamic = 'force-dynamic'
+
 interface ProfilePageProps {
   params: Promise<{
     slug: string
