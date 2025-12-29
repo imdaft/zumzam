@@ -113,27 +113,3 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-    if (!partner) {
-      return NextResponse.json({ error: 'Partner not found' }, { status: 404 })
-    }
-
-    const user = await prisma.users.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    })
-    const isAdmin = user?.role === 'admin'
-
-    if (!isAdmin && partner.profiles.user_id !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    await prisma.agency_partners.delete({
-      where: { id },
-    })
-
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    logger.error('[Agency Partners API] DELETE error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-}

@@ -247,13 +247,3 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-      throw error
-    }
-  } catch (error: any) {
-    logger.error('[API Respond GET] Error:', error)
-    return NextResponse.json(
-      { error: 'Внутренняя ошибка сервера' },
-      { status: 500 }
-    )
-  }
-}

@@ -113,14 +113,3 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-
-    await prisma.quest_programs.delete({
-      where: { id },
-    })
-
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    logger.error('[Quest Programs API] DELETE error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-}

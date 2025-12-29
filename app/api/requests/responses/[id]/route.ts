@@ -238,7 +238,3 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-      { status: 500 }
-    )
-  }
-}

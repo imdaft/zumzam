@@ -133,34 +133,3 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-
-    // Проверяем, что программа принадлежит профилю пользователя
-    const existingProgram = await prisma.master_class_programs.findUnique({
-      where: { id },
-      select: { profile_id: true },
-      include: {
-        profiles: {
-          select: { user_id: true },
-        },
-      },
-    })
-
-    if (!existingProgram) {
-      return NextResponse.json({ error: 'Master class program not found' }, { status: 404 })
-    }
-
-    if (!isAdmin && existingProgram.profiles.user_id !== userId) {
-      return NextResponse.json({ error: 'Access denied: Program does not belong to your profile' }, { status: 403 })
-    }
-
-    await prisma.master_class_programs.delete({
-      where: { id },
-    })
-
-    logger.info('[Master Class Programs API] Deleted:', id)
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    logger.error('[Master Class Programs API] DELETE error:', error)
-    return NextResponse.json({ error: error.message || 'Failed to delete master class program' }, { status: 500 })
-  }
-}
