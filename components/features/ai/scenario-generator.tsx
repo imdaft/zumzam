@@ -290,7 +290,7 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                 <FormField
                   control={form.control}
                   name="budget"
-                  render=({({ field }) => (
+                  render={({ field }) => (
                     <FormItem>
                       <FormLabel>Бюджет (₽)</FormLabel>
                       <FormControl>
