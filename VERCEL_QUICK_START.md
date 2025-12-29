@@ -33,32 +33,37 @@ npm run build
 
 ### 4. Переменные окружения
 
-В **Settings** → **Environment Variables** добавьте:
+**Подробная инструкция:** См. `docs/VERCEL_ENV_VARIABLES.md`
+
+**Кратко:**
+
+В **Settings** → **Environment Variables** → **Add New** добавьте:
 
 #### Обязательные:
 
-```
-DATABASE_URL=postgresql://zumzam_admin:ВАШ_ПАРОЛЬ@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require
-```
+**1. DATABASE_URL**
+- Name: `DATABASE_URL`
+- Value: `postgresql://zumzam_admin:ВАШ_ПАРОЛЬ@rc1b-ktk7vobktajbv2sd.mdb.yandexcloud.net:6432/zumzam?sslmode=require`
+- Environments: ✅ Production, ✅ Preview, ✅ Development
 
-```
-GOOGLE_GEMINI_API_KEY=ваш_gemini_api_key
-```
+**2. GOOGLE_GEMINI_API_KEY**
+- Name: `GOOGLE_GEMINI_API_KEY`
+- Value: `ваш_gemini_api_key` (из https://aistudio.google.com/app/apikey)
+- Environments: ✅ Production, ✅ Preview, ✅ Development
 
-```
-JWT_SECRET=ваш_случайный_ключ_минимум_32_символа
-```
+**3. JWT_SECRET**
+- Name: `JWT_SECRET`
+- Value: `случайный_ключ_минимум_32_символа` (сгенерируйте через `openssl rand -hex 32`)
+- Environments: ✅ Production, ✅ Preview, ✅ Development
 
 #### Опциональные:
 
-```
-NEXT_PUBLIC_SITE_URL=https://ваш-проект.vercel.app
-```
+**4. NEXT_PUBLIC_SITE_URL**
+- Name: `NEXT_PUBLIC_SITE_URL`
+- Value: `https://ваш-проект.vercel.app` (или ваш домен)
+- Environments: ✅ Production, ✅ Preview
 
-**Важно:** Для каждой переменной выберите окружения:
-- ✅ Production
-- ✅ Preview  
-- ✅ Development
+**После добавления:** Нажмите **Save** для каждой переменной
 
 ### 5. Деплой
 
