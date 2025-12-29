@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Генерация FAQ Embeddings</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+    button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #7c3aed; color: white; border: none; border-radius: 8px; }
+    button:hover { background: #6d28d9; }
+    button:disabled { background: #9ca3af; cursor: wait; }
+    #status { margin-top: 20px; padding: 16px; background: #f3f4f6; border-radius: 8px; }
+    #results { margin-top: 20px; white-space: pre-wrap; font-family: monospace; background: #1f2937; color: #10b981; padding: 16px; border-radius: 8px; }
+    .success { color: #10b981; }
+    .error { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>🧠 Генерация FAQ Embeddings</h1>
+  <p>Эта страница сгенерирует векторные embeddings для FAQ вопросов через Gemini API.</p>
+  
+  <button id="checkBtn" onclick="checkStatus()">Проверить статус</button>
+  <button id="generateBtn" onclick="generateEmbeddings()">🚀 Сгенерировать embeddings</button>
+  
+  <div id="status">Нажмите кнопку для проверки статуса...</div>
+  <div id="results"></div>
+
+  <script>
+    async function checkStatus() {
+      const statusEl = document.getElementById('status');
+      statusEl.innerHTML = 'Проверяю...';
+      
+      try {
+        const res = await fetch('/api/faq/generate-embeddings');
+        const data = await res.json();
+        
+        statusEl.innerHTML = `
+          <strong>Статус FAQ Embeddings:</strong><br>
+          • Всего записей: ${data.total}<br>
+          • С embeddings: ${data.withEmbeddings}<br>
+          • Без embeddings: ${data.withoutEmbeddings}<br>
+          • Готово к AI-поиску: ${data.ready ? '✅ Да' : '❌ Нет'}
+        `;
+      } catch (err) {
+        statusEl.innerHTML = '<span class="error">Ошибка: ' + err.message + '</span>';
+      }
+    }
+
+    async function generateEmbeddings() {
+      const btn = document.getElementById('generateBtn');
+      const resultsEl = document.getElementById('results');
+      
+      btn.disabled = true;
+      btn.textContent = '⏳ Генерация...';
+      resultsEl.innerHTML = 'Запускаю генерацию embeddings через Gemini API...\nЭто может занять несколько секунд...';
+      
+      try {
+        const res = await fetch('/api/faq/generate-embeddings', {
+          method: 'POST'
+        });
+        const data = await res.json();
+        
+        resultsEl.innerHTML = JSON.stringify(data, null, 2);
+        
+        // Обновляем статус
+        await checkStatus();
+      } catch (err) {
+        resultsEl.innerHTML = '<span class="error">Ошибка: ' + err.message + '</span>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Сгенерировать embeddings';
+      }
+    }
+
+    // Проверяем статус при загрузке
+    checkStatus();
+  </script>
+</body>
+</html>
+

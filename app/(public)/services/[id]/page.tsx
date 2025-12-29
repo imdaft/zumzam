@@ -8,9 +8,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
 interface ServicePageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 /**
@@ -42,82 +42,115 @@ async function getService(id: string) {
  * Страница отдельной услуги с формой бронирования
  */
 export default async function ServicePage({ params }: ServicePageProps) {
-  const service = await getService(params.id)
+  const { id } = await params
+  const service = await getService(id)
 
   if (!service) {
     notFound()
   }
 
   const profile = service.profiles
+  const priceLabel =
+    service.price
+      ? `${Number(service.price).toLocaleString('ru-RU')}₽`
+      : service.price_from && service.price_to
+        ? `${Number(service.price_from).toLocaleString('ru-RU')} – ${Number(service.price_to).toLocaleString('ru-RU')}₽`
+        : 'По запросу'
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid gap-8 lg:grid-cols-[1fr_400px]">
+    <div className="min-h-screen bg-[#F7F8FA]">
+      <div className="w-full px-2 py-4 pb-24 sm:container sm:mx-auto sm:px-6 sm:py-8">
+        <div className="grid gap-4 lg:gap-6 lg:grid-cols-[1fr_420px]">
           {/* Main Content */}
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Breadcrumbs */}
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Link href="/" className="hover:text-foreground">Главная</Link>
-              <span>/</span>
-              <Link href="/services" className="hover:text-foreground">Услуги</Link>
-              <span>/</span>
-              <span className="text-foreground">{service.title}</span>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+              <Link href="/" className="hover:text-gray-900">Главная</Link>
+              <span className="text-gray-300">/</span>
+              <Link href="/services" className="hover:text-gray-900">Услуги</Link>
+              <span className="text-gray-300">/</span>
+              <span className="text-gray-900 font-semibold">{service.title}</span>
             </div>
 
             {/* Header */}
-            <div>
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h1 className="text-3xl font-bold mb-2">{service.title}</h1>
+            <div className="bg-white border border-gray-100 shadow-sm rounded-[24px] p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">
+                    {service.title}
+                  </h1>
                   {profile && (
-                    <Link 
+                    <Link
                       href={`/profiles/${profile.slug}`}
-                      className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                      className="mt-2 inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
                     >
-                      <span>{profile.display_name}</span>
+                      <span className="font-semibold">{profile.display_name}</span>
                       {profile.verified && (
-                        <BadgeCheck className="h-4 w-4 text-primary" />
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                          <BadgeCheck className="h-3.5 w-3.5" />
+                          Проверено
+                        </span>
                       )}
                     </Link>
                   )}
                 </div>
-                <div className="text-right">
-                  <div className="text-3xl font-bold text-primary">
-                    {service.price?.toLocaleString()}₽
+
+                <div className="text-right shrink-0">
+                  <div className={priceLabel === 'По запросу' ? 'text-lg sm:text-xl font-bold text-gray-900' : 'text-2xl sm:text-3xl font-bold text-orange-600'}>
+                    {priceLabel}
                   </div>
                   {service.price_type && (
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-sm text-gray-500">
                       {service.price_type}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Quick Info */}
-              <div className="flex flex-wrap gap-4 text-sm">
+              {/* Quick Info (Lavka) */}
+              <div className="mt-4 rounded-[24px] border border-gray-100 divide-y divide-gray-100 overflow-hidden">
                 {service.duration_minutes && (
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span>{service.duration_minutes} минут</span>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center">
+                        <Clock className="h-4 w-4 text-orange-600" />
+                      </span>
+                      Длительность
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">{service.duration_minutes} минут</div>
                   </div>
                 )}
                 {service.age_from && service.age_to && (
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span>{service.age_from}-{service.age_to} лет</span>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center">
+                        <Users className="h-4 w-4 text-orange-600" />
+                      </span>
+                      Возраст
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">{service.age_from}-{service.age_to} лет</div>
                   </div>
                 )}
                 {service.capacity_min && service.capacity_max && (
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span>{service.capacity_min}-{service.capacity_max} человек</span>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center">
+                        <Users className="h-4 w-4 text-orange-600" />
+                      </span>
+                      Кол-во гостей
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">{service.capacity_min}-{service.capacity_max} человек</div>
                   </div>
                 )}
                 {profile?.city && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span>{profile.city}</span>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center">
+                        <MapPin className="h-4 w-4 text-orange-600" />
+                      </span>
+                      Город
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">{profile.city}</div>
                   </div>
                 )}
               </div>
@@ -125,11 +158,11 @@ export default async function ServicePage({ params }: ServicePageProps) {
 
             {/* Photos */}
             {service.photos && service.photos.length > 0 && (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2 sm:gap-3 sm:grid-cols-2">
                 {service.photos.slice(0, 4).map((photo: string, i: number) => (
                   <div 
                     key={i} 
-                    className="relative aspect-video rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-800"
+                    className="relative aspect-video rounded-[24px] overflow-hidden bg-gray-100 border border-gray-100"
                   >
                     <Image
                       src={photo}
@@ -143,12 +176,12 @@ export default async function ServicePage({ params }: ServicePageProps) {
             )}
 
             {/* Description */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Описание</CardTitle>
+            <Card className="rounded-[24px] border border-gray-100 bg-white shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-bold text-gray-900">Описание</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="whitespace-pre-wrap text-muted-foreground">
+                <p className="whitespace-pre-wrap text-gray-700 leading-relaxed">
                   {service.description}
                 </p>
               </CardContent>
@@ -156,14 +189,14 @@ export default async function ServicePage({ params }: ServicePageProps) {
 
             {/* Tags */}
             {service.tags && service.tags.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Теги</CardTitle>
+              <Card className="rounded-[24px] border border-gray-100 bg-white shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-bold text-gray-900">Теги</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-2">
                     {service.tags.map((tag: string, i: number) => (
-                      <Badge key={i} variant="secondary">
+                      <Badge key={i} className="rounded-full bg-gray-100 text-gray-700 px-2">
                         {tag}
                       </Badge>
                     ))}
@@ -174,9 +207,9 @@ export default async function ServicePage({ params }: ServicePageProps) {
 
             {/* Profile Info */}
             {profile && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>О студии</CardTitle>
+              <Card className="rounded-[24px] border border-gray-100 bg-white shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-bold text-gray-900">О студии</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-start gap-4">
@@ -193,11 +226,11 @@ export default async function ServicePage({ params }: ServicePageProps) {
                       <h3 className="font-semibold flex items-center gap-2">
                         {profile.display_name}
                         {profile.verified && (
-                          <BadgeCheck className="h-4 w-4 text-primary" />
+                          <BadgeCheck className="h-4 w-4 text-green-600" />
                         )}
                       </h3>
                       {profile.bio && (
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-sm text-gray-600 mt-1">
                           {profile.bio}
                         </p>
                       )}
@@ -210,7 +243,7 @@ export default async function ServicePage({ params }: ServicePageProps) {
                     </div>
                   </div>
                   <Link href={`/profiles/${profile.slug}`}>
-                    <Button variant="outline" className="w-full">
+                    <Button variant="outline" className="w-full rounded-full">
                       Посмотреть все услуги студии
                     </Button>
                   </Link>
@@ -221,10 +254,12 @@ export default async function ServicePage({ params }: ServicePageProps) {
 
           {/* Booking Sidebar */}
           <div className="lg:sticky lg:top-24 h-fit">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
+            <Card className="rounded-[24px] border border-gray-100 bg-white shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg font-bold text-gray-900">
+                  <span className="w-9 h-9 rounded-full bg-orange-50 flex items-center justify-center">
+                    <Calendar className="h-5 w-5 text-orange-600" />
+                  </span>
                   Забронировать
                 </CardTitle>
               </CardHeader>
@@ -248,7 +283,8 @@ export default async function ServicePage({ params }: ServicePageProps) {
  * Генерация метаданных для SEO
  */
 export async function generateMetadata({ params }: ServicePageProps) {
-  const service = await getService(params.id)
+  const { id } = await params
+  const service = await getService(id)
 
   if (!service) {
     return {
@@ -257,7 +293,7 @@ export async function generateMetadata({ params }: ServicePageProps) {
   }
 
   return {
-    title: `${service.title} | DetiNaRakete`,
+    title: `${service.title} | ZumZam`,
     description: service.description?.substring(0, 160),
     openGraph: {
       title: service.title,

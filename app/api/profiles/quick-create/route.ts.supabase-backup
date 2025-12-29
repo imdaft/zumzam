@@ -1,0 +1,54 @@
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+/**
+ * Быстрое создание пустого профиля
+ * POST /api/profiles/quick-create
+ */
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Генерируем временный slug
+    const timestamp = Date.now()
+    const tempSlug = `profile-${user.id.slice(0, 8)}-${timestamp}`
+
+    // Создаём минимальный профиль
+    const { data: profile, error: createError } = await supabase
+      .from('profiles')
+      .insert({
+        user_id: user.id,
+        slug: tempSlug,
+        display_name: 'Новый профиль',
+        category: 'animator', // По умолчанию без адреса
+        city: '', // Заполнится позже
+        is_published: false,
+        verified: false,
+      })
+      .select()
+      .single()
+
+    if (createError) {
+      console.error('Error creating profile:', createError)
+      return NextResponse.json(
+        { error: 'Failed to create profile' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ profile }, { status: 201 })
+  } catch (error: any) {
+    console.error('Quick create error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to create profile' },
+      { status: 500 }
+    )
+  }
+}
+

@@ -9,7 +9,12 @@ Disallow: /dashboard
 # Disallow API routes
 Disallow: /api/
 
+# Disallow auth pages
+Disallow: /login
+Disallow: /register
+Disallow: /signup
+
 # Sitemap
-Sitemap: https://detinarakete.ru/sitemap.xml
+Sitemap: https://zumzam.ru/sitemap.xml
 
 

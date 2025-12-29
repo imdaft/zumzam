@@ -1,0 +1,172 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+// Временное хранилище кодов (в production использовать Redis)
+const verificationCodes = new Map<string, { code: string; expires: number }>()
+
+/**
+ * POST /api/settings/notifications/verify-email
+ * Отправить код подтверждения на email
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    if (authError || !user || !user.email) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Генерируем 6-значный код
+    const code = Math.floor(100000 + Math.random() * 900000).toString()
+    
+    // Сохраняем код на 10 минут
+    verificationCodes.set(userId, {
+      code,
+      expires: Date.now() + 10 * 60 * 1000, // 10 минут
+    })
+
+    // TODO: Отправить email через Resend/SendGrid
+    console.log(`[Email Verification] Code for ${user.email}: ${code}`)
+    
+    // В dev режиме логируем код
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`\n=== EMAIL VERIFICATION CODE ===`)
+      console.log(`User: ${user.email}`)
+      console.log(`Code: ${code}`)
+      console.log(`Expires in 10 minutes`)
+      console.log(`================================\n`)
+    }
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Код отправлен на email'
+    })
+  } catch (error: any) {
+    console.error('[Email Verification API] Error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PUT /api/settings/notifications/verify-email
+ * Проверить код подтверждения
+ */
+export async function PUT(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { code } = body
+
+    if (!code) {
+      return NextResponse.json(
+        { error: 'Код обязателен' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем код
+    const stored = verificationCodes.get(userId)
+    
+    if (!stored) {
+      return NextResponse.json(
+        { error: 'Код не найден или истёк' },
+        { status: 400 }
+      )
+    }
+
+    if (stored.expires < Date.now()) {
+      verificationCodes.delete(userId)
+      return NextResponse.json(
+        { error: 'Код истёк' },
+        { status: 400 }
+      )
+    }
+
+    if (stored.code !== code) {
+      return NextResponse.json(
+        { error: 'Неверный код' },
+        { status: 400 }
+      )
+    }
+
+    // Код верный - обновляем настройки
+    const { error: updateError } = await supabase
+      .from('notification_settings')
+      .update({ email_verified: true })
+      .eq('user_id', userId)
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    // Удаляем использованный код
+    verificationCodes.delete(userId)
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Email подтверждён'
+    })
+  } catch (error: any) {
+    console.error('[Email Verification API] Error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

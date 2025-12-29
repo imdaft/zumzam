@@ -1,0 +1,123 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * GET /api/admin/reviews
+ * Получить список всех отзывов с фильтрацией
+ */
+export async function GET(request: Request) {
+  try {
+    // Supabase client removed
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userRoleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userRoleError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Получаем параметры фильтрации
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get('status') // pending, approved, rejected
+    const rating = searchParams.get('rating') // 1-5
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '20')
+    const offset = (page - 1) * limit
+
+    // Строим запрос
+    let query = supabase
+      .from('reviews')
+      .select(`
+        id,
+        profile_id,
+        user_id,
+        booking_id,
+        rating,
+        comment,
+        status,
+        created_at,
+        updated_at
+      `, { count: 'exact' })
+
+    // Фильтры
+    if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+      query = query.eq('status', status)
+    }
+    if (rating && parseInt(rating) >= 1 && parseInt(rating) <= 5) {
+      query = query.eq('rating', parseInt(rating))
+    }
+
+    // Сортировка и пагинация
+    query = query
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    const { data: reviews, error, count } = await query
+
+    if (error) {
+      console.error('Error fetching reviews:', error)
+      return NextResponse.json({ error: 'Failed to fetch reviews' }, { status: 500 })
+    }
+
+    // Загружаем профили и пользователей для отзывов
+    if (reviews && reviews.length > 0) {
+      const profileIds = [...new Set(reviews.map(r => r.profile_id))]
+      const userIds = [...new Set(reviews.map(r => r.user_id))]
+
+      const [{ data: profiles }, { data: users }] = await Promise.all([
+        supabase.from('profiles').select('id, display_name, slug, logo').in('id', profileIds),
+        supabase.from('users').select('id, email').in('id', userIds)
+      ])
+
+      // Присоединяем данные к отзывам
+      const reviewsWithData = reviews.map(review => ({
+        ...review,
+        profile: profiles?.find(p => p.id === review.profile_id) || null,
+        reviewer: users?.find(u => u.id === review.user_id) || null
+      }))
+
+      return NextResponse.json({
+        reviews: reviewsWithData,
+        pagination: {
+          page,
+          limit,
+          total: count || 0,
+          totalPages: Math.ceil((count || 0) / limit),
+        },
+      })
+    }
+
+    return NextResponse.json({
+      reviews: reviews || [],
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+      },
+    })
+  } catch (error: any) {
+    console.error('Admin reviews GET error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+

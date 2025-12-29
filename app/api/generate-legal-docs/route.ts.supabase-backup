@@ -1,0 +1,185 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { aiService } from '@/lib/services/ai-service'
+import { getQuestionsForProfile, isQuestionnaireComplete } from '@/lib/utils/legal-questionnaire'
+
+/**
+ * POST /api/generate-legal-docs
+ * Генерация юридических документов (договор оферты и правила бронирования)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { profile_id, type } = body
+
+    console.log('[Generate Legal Docs] Request:', { profile_id, type })
+
+    if (!profile_id || !type) {
+      return NextResponse.json(
+        { error: 'profile_id and type are required' },
+        { status: 400 }
+      )
+    }
+
+    if (type !== 'agreement' && type !== 'rules' && type !== 'both') {
+      return NextResponse.json(
+        { error: 'type must be "agreement", "rules", or "both"' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем права доступа к профилю
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id, category, legal_form')
+      .eq('id', profile_id)
+      .single()
+
+    if (profileError || !profile) {
+      console.error('[Generate Legal Docs] Profile not found:', profileError)
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    if (profile.user_id !== user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+    
+    // Загружаем данные анкеты
+    const { data: questionnaireData, error: questionnaireError } = await supabase
+      .from('legal_questionnaire_answers')
+      .select('answers')
+      .eq('profile_id', profile_id)
+      .single()
+    
+    if (questionnaireError || !questionnaireData) {
+      console.warn('[Generate Legal Docs] Questionnaire not found, using empty answers')
+      // Если анкета не найдена - используем пустые ответы (для обратной совместимости)
+      const answers = {}
+      const results: any = {}
+
+      // Генерируем с пустыми данными
+      if (type === 'agreement' || type === 'both') {
+        try {
+          const agreementText = await aiService.generateOfferAgreement({
+            ...answers,
+            profileType: profile.category,
+            legalForm: profile.legal_form,
+          })
+          results.agreement = agreementText
+        } catch (error: any) {
+          console.error('[Generate Legal Docs] Agreement error:', error)
+          results.agreementError = error.message
+        }
+      }
+
+      if (type === 'rules' || type === 'both') {
+        try {
+          const rulesText = await aiService.generateBookingRules({
+            ...answers,
+            profileType: profile.category,
+            legalForm: profile.legal_form,
+          })
+          results.rules = rulesText
+        } catch (error: any) {
+          console.error('[Generate Legal Docs] Rules error:', error)
+          results.rulesError = error.message
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        results,
+        warning: 'Generated with default values. Fill the questionnaire for better results.'
+      }, { status: 200 })
+    }
+    
+    const answers = questionnaireData.answers
+    console.log('[Generate Legal Docs] Profile category:', profile.category, 'Legal form:', profile.legal_form)
+    const questions = getQuestionsForProfile(profile.category, profile.legal_form)
+    console.log('[Generate Legal Docs] Total questions for this profile:', questions.length)
+    console.log('[Generate Legal Docs] Question IDs:', questions.map(q => q.id))
+    console.log('[Generate Legal Docs] Answers received:', Object.keys(answers).length, 'keys')
+    console.log('[Generate Legal Docs] Answer keys:', Object.keys(answers))
+    const completionStatus = isQuestionnaireComplete(answers, questions)
+    
+    // Проверяем, что анкета заполнена на 100%
+    if (!completionStatus.isComplete) {
+      console.warn('[Generate Legal Docs] Questionnaire incomplete:', completionStatus.missingQuestions.length, 'missing')
+      console.warn('[Generate Legal Docs] Missing questions:', completionStatus.missingQuestions)
+      return NextResponse.json(
+        {
+          error: 'Анкета заполнена не полностью',
+          missingQuestions: completionStatus.missingQuestions,
+          missingCount: completionStatus.missingQuestions.length,
+        },
+        { status: 400 }
+      )
+    }
+
+    const results: any = {}
+
+    // Генерируем договор оферты
+    if (type === 'agreement' || type === 'both') {
+      try {
+        console.log('[Generate Legal Docs] Generating agreement...')
+        const agreementText = await aiService.generateOfferAgreement({
+          ...answers,
+          profileType: profile.category,
+          legalForm: profile.legal_form,
+        })
+        results.agreement = agreementText
+        console.log('[Generate Legal Docs] Agreement generated:', agreementText.length, 'chars')
+      } catch (error: any) {
+        console.error('[Generate Legal Docs] Agreement generation error:', error)
+        results.agreementError = error.message
+      }
+    }
+
+    // Генерируем правила бронирования
+    if (type === 'rules' || type === 'both') {
+      try {
+        console.log('[Generate Legal Docs] Generating rules...')
+        const rulesText = await aiService.generateBookingRules({
+          ...answers,
+          profileType: profile.category,
+          legalForm: profile.legal_form,
+        })
+        results.rules = rulesText
+        console.log('[Generate Legal Docs] Rules generated:', rulesText.length, 'chars')
+      } catch (error: any) {
+        console.error('[Generate Legal Docs] Rules generation error:', error)
+        results.rulesError = error.message
+      }
+    }
+
+    // Если были ошибки при генерации
+    if (results.agreementError || results.rulesError) {
+      return NextResponse.json(
+        {
+          success: false,
+          results,
+          error: 'Some documents failed to generate'
+        },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      results,
+    }, { status: 200 })
+  } catch (error: any) {
+    console.error('[Generate Legal Docs] Error:', error)
+    return NextResponse.json({
+      success: false,
+      error: error.message
+    }, { status: 500 })
+  }
+}

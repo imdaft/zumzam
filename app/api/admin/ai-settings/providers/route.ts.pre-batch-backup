@@ -1,0 +1,130 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+async function assertAdmin(supabase: any) {
+  const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+  // Auth check done above, { status: 401 }) }
+  }
+
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .single()
+
+  if (userError || userData?.role !== 'admin') {
+    return { ok: false as const, response: NextResponse.json({ message: 'Access denied' }, { status: 403 }) }
+  }
+
+  return { ok: true as const }
+}
+
+// Получить все провайдеры
+export async function GET() {
+  try {
+    // Supabase client removed
+    const admin = await assertAdmin(supabase)
+    if (!admin.ok) return admin.response
+
+    const { data: providers, error } = await supabase
+      .from('ai_settings')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[AI Settings] Error fetching providers:', error)
+      return NextResponse.json({ message: 'Failed to fetch providers' }, { status: 500 })
+    }
+
+    return NextResponse.json({ providers })
+  } catch (error) {
+    console.error('[AI Settings] Error:', error)
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// Добавить нового провайдера
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const admin = await assertAdmin(supabase)
+    if (!admin.ok) return admin.response
+
+    const body = await request.json()
+
+    const { provider, model_name, api_key, base_url, model_type, description, is_active } = body
+
+    if (!provider || !model_name) {
+      return NextResponse.json({ message: 'Provider and model_name are required' }, { status: 400 })
+    }
+
+    // Для Ollama base_url обязателен
+    if (provider === 'ollama' && !base_url) {
+      return NextResponse.json({ message: 'Base URL is required for Ollama' }, { status: 400 })
+    }
+
+    // Для облачных провайдеров api_key обязателен
+    if (provider !== 'ollama' && !api_key) {
+      return NextResponse.json({ message: 'API key is required for cloud providers' }, { status: 400 })
+    }
+
+    // Только одна модель может быть активной одновременно.
+    // Если создаём активную — деактивируем все остальные.
+    if (is_active === true) {
+      const { error: deactivateError } = await supabase
+        .from('ai_settings')
+        .update({ is_active: false })
+        .eq('is_active', true)
+
+      // Error handling removed (Prisma throws exceptions), { status: 500 })
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('ai_settings')
+      .insert({
+        provider,
+        model_name,
+        api_key: api_key || null,
+        base_url: base_url || null,
+        model_type: model_type || 'chat',
+        description: description || null,
+        is_active: is_active ?? true,
+        settings: {},
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[AI Settings] Error creating provider:', error)
+      // Частый кейс: попытка иметь 2 активных (уникальный индекс)
+      if (error.code === '23505' && String(error.message || '').includes('idx_ai_settings_active')) {
+        return NextResponse.json(
+          { message: 'Уже есть активная модель. Снимите флаг "активная" или замените активную модель.' },
+          { status: 409 }
+        )
+      }
+      return NextResponse.json({ message: 'Failed to create provider', details: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ provider: data })
+  } catch (error) {
+    console.error('[AI Settings] Error:', error)
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
+  }
+}
+

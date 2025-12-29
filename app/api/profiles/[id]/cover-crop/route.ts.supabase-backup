@@ -1,0 +1,197 @@
+/**
+ * API endpoint для сохранения координат кропа обложки
+ * PATCH /api/profiles/[id]/cover-crop
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { logger } from '@/lib/logger'
+import type { CropData, CoverPhotoCrop } from '@/lib/types/crop'
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: profileId } = await params
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Необходима авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Получаем профиль и проверяем права доступа
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id, cover_photo_crop')
+      .eq('id', profileId)
+      .single()
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: 'Профиль не найден' },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем, что пользователь - владелец профиля
+    if (profile.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Нет прав для изменения этого профиля' },
+        { status: 403 }
+      )
+    }
+
+    // Получаем данные из запроса
+    const body = await request.json()
+    const { templateId, crop, coverPhotoUrl } = body as { 
+      templateId: string; 
+      crop: CropData;
+      coverPhotoUrl?: string; // Опциональный URL расширенного изображения
+    }
+
+    logger.info('Данные запроса:', { templateId, crop, coverPhotoUrl, profileId })
+
+    if (!templateId || !crop) {
+      logger.error('Отсутствуют обязательные поля:', { templateId, crop })
+      return NextResponse.json(
+        { error: 'Необходимо указать templateId и crop' },
+        { status: 400 }
+      )
+    }
+
+    // Валидация данных кропа
+    if (
+      typeof crop.x !== 'number' ||
+      typeof crop.y !== 'number' ||
+      typeof crop.zoom !== 'number' ||
+      typeof crop.aspect !== 'number'
+    ) {
+      logger.error('Некорректные типы данных кропа:', { 
+        crop,
+        types: {
+          x: typeof crop.x,
+          y: typeof crop.y,
+          zoom: typeof crop.zoom,
+          aspect: typeof crop.aspect
+        }
+      })
+      return NextResponse.json(
+        { error: 'Некорректные данные кропа' },
+        { status: 400 }
+      )
+    }
+
+    // Проверка на NaN
+    if (
+      isNaN(crop.x) ||
+      isNaN(crop.y) ||
+      isNaN(crop.zoom) ||
+      isNaN(crop.aspect)
+    ) {
+      logger.error('Данные кропа содержат NaN:', crop)
+      return NextResponse.json(
+        { error: 'Некорректные числовые значения кропа' },
+        { status: 400 }
+      )
+    }
+
+    // Получаем текущие кропы
+    const currentCrops: CoverPhotoCrop = profile.cover_photo_crop || {}
+
+    // Обновляем кроп для шаблона
+    const updatedCrops: CoverPhotoCrop = {
+      ...currentCrops,
+      [templateId]: crop,
+    }
+
+    // Подготавливаем данные для обновления
+    const updateData: any = {
+      cover_photo_crop: updatedCrops,
+      updated_at: new Date().toISOString(),
+    }
+
+    // Если передан URL расширенного изображения - обновляем cover_photo
+    if (coverPhotoUrl) {
+      updateData.cover_photo = coverPhotoUrl
+      logger.info(`Обновляем cover_photo на расширенное изображение: ${coverPhotoUrl}`)
+    }
+
+    // Сохраняем в БД
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update(updateData)
+      .eq('id', profileId)
+
+    if (updateError) {
+      logger.error('Ошибка при обновлении кропа:', updateError)
+      return NextResponse.json(
+        { error: 'Ошибка при сохранении кропа' },
+        { status: 500 }
+      )
+    }
+
+    logger.info(`Кроп обложки обновлен для шаблона ${templateId} профиля ${profileId}`)
+
+    return NextResponse.json({
+      success: true,
+      cover_photo_crop: updatedCrops,
+    })
+
+  } catch (error) {
+    logger.error('Ошибка в PATCH /api/profiles/[id]/cover-crop:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Получить текущие кропы обложки
+ * GET /api/profiles/[id]/cover-crop
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: profileId } = await params
+    const supabase = await createClient()
+
+    // Получаем кропы профиля
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('cover_photo_crop')
+      .eq('id', profileId)
+      .single()
+
+    if (error || !profile) {
+      return NextResponse.json(
+        { error: 'Профиль не найден' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({
+      cover_photo_crop: profile.cover_photo_crop || {
+        classic: { x: 0, y: 0, zoom: 1, aspect: 1.78 },
+        modern: { x: 0, y: 0, zoom: 1, aspect: 0.75 },
+        minimal: { x: 0, y: 0, zoom: 1, aspect: 1.78 },
+      },
+    })
+
+  } catch (error) {
+    logger.error('Ошибка в GET /api/profiles/[id]/cover-crop:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

@@ -1,0 +1,336 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+/**
+ * API для управления корзиной
+ * GET /api/cart - получить корзину пользователя
+ * POST /api/cart - добавить товар в корзину
+ * DELETE /api/cart - очистить корзину
+ */
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { NextResponse } from 'next/server'
+import type { AddToCartInput } from '@/types'
+
+/**
+ * GET /api/cart - Получить корзину текущего пользователя
+ */
+export async function GET() {
+  try {
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Получаем корзину с полной информацией об услугах и профилях
+    const { data: items, error } = await supabase
+      .from('cart_items')
+      .select(`
+        *,
+        service:services (
+          id,
+          title,
+          description,
+          price,
+          service_type,
+          is_package,
+          images,
+          profile_id
+        ),
+        profile:profiles (
+          id,
+          display_name,
+          slug,
+          city
+        )
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      logger.error('[Cart API] Ошибка получения корзины:', error)
+      
+      // Если таблица не существует, возвращаем пустую корзину
+      if (error.code === '42P01' || error.message.includes('relation') || error.message.includes('does not exist')) {
+        console.warn('[Cart API] Cart table does not exist yet. Returning empty cart.')
+        return NextResponse.json({ items: [], warning: 'Cart table not created yet' })
+      }
+      
+      throw error
+    }
+
+    return NextResponse.json({ items: items || [] })
+  } catch (error: any) {
+    logger.error('[Cart API] GET error:', error)
+    
+    // Если таблица не существует, возвращаем пустую корзину вместо ошибки
+    if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
+      return NextResponse.json({ items: [], warning: 'Cart table not created yet' })
+    }
+    
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch cart' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/cart - Добавить товар в корзину
+ */
+export async function POST(request: Request) {
+  try {
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const body: AddToCartInput = await request.json()
+    const { service_id, profile_id, quantity = 1, notes, custom_price } = body
+
+    // Валидация
+    if (!service_id || !profile_id) {
+      return NextResponse.json(
+        { error: 'service_id and profile_id are required' },
+        { status: 400 }
+      )
+    }
+
+    if (quantity < 1) {
+      return NextResponse.json(
+        { error: 'Quantity must be at least 1' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, что услуга существует и активна
+    const { data: service, error: serviceError } = await supabase
+      .from('services')
+      .select('id, profile_id, price, is_active, title')
+      .eq('id', service_id)
+      .single()
+
+    if (serviceError || !service) {
+      return NextResponse.json(
+        { error: 'Service not found' },
+        { status: 404 }
+      )
+    }
+
+    if (!service.is_active) {
+      return NextResponse.json(
+        { error: 'Service is not active' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, что profile_id совпадает
+    if (service.profile_id !== profile_id) {
+      return NextResponse.json(
+        { error: 'Service does not belong to this profile' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, есть ли товары от ДРУГОГО профиля
+    const { data: otherProfileItem } = await supabase
+      .from('cart_items')
+      .select(`
+        profile:profiles (
+          display_name
+        )
+      `)
+      .eq('user_id', userId)
+      .neq('profile_id', profile_id)
+      .limit(1)
+      .single()
+
+    if (otherProfileItem) {
+      // @ts-ignore - Supabase typing issue
+      const profileName = otherProfileItem.profile?.display_name || 'другого исполнителя'
+      
+      return NextResponse.json({
+        error: 'Conflict',
+        message: `В корзине уже есть услуги от "${profileName}". Очистить корзину перед добавлением?`,
+        code: 'DIFFERENT_PROFILE_EXISTS',
+        current_profile_name: profileName
+      }, { status: 409 })
+    }
+
+    // Проверяем, есть ли уже этот товар с такими же notes в корзине
+    const { data: existingItem } = await supabase
+      .from('cart_items')
+      .select('id, quantity, custom_price, notes')
+      .eq('user_id', userId)
+      .eq('service_id', service_id)
+      .eq('notes', notes || '')
+      .single()
+
+    let cartItem
+
+    if (existingItem) {
+      // Обновляем количество существующего товара
+      const { data, error: updateError } = await supabase
+        .from('cart_items')
+        .update({
+          quantity: existingItem.quantity + quantity,
+          notes: notes || existingItem.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingItem.id)
+        .select(`
+          *,
+          service:services (
+            id,
+            title,
+            description,
+            price,
+            service_type,
+            is_package,
+            images,
+            profile_id
+          ),
+          profile:profiles (
+            id,
+            display_name,
+            slug,
+            city
+          )
+        `)
+        .single()
+
+      if (updateError) {
+        logger.error('[Cart API] Ошибка обновления корзины:', updateError)
+        throw updateError
+      }
+
+      cartItem = data
+    } else {
+      // Добавляем новый товар в корзину
+      const { data, error: insertError } = await supabase
+        .from('cart_items')
+        .insert({
+          user_id: userId,
+          service_id,
+          profile_id,
+          quantity,
+          price_snapshot: custom_price || service.price, // Используем custom_price если передан
+          custom_price: custom_price || null,
+          notes: notes || null,
+        })
+        .select(`
+          *,
+          service:services (
+            id,
+            title,
+            description,
+            price,
+            service_type,
+            is_package,
+            images,
+            profile_id
+          ),
+          profile:profiles (
+            id,
+            display_name,
+            slug,
+            city
+          )
+        `)
+        .single()
+
+      if (insertError) {
+        logger.error('[Cart API] Ошибка добавления в корзину:', insertError)
+        throw insertError
+      }
+
+      cartItem = data
+    }
+
+    return NextResponse.json({
+      item: cartItem,
+      message: existingItem 
+        ? 'Количество обновлено' 
+        : `"${service.title}" добавлено в корзину`,
+    }, { status: existingItem ? 200 : 201 })
+  } catch (error: any) {
+    logger.error('[Cart API] POST error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to add to cart' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/cart - Очистить всю корзину
+ */
+export async function DELETE() {
+  try {
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Удаляем все товары из корзины пользователя
+    const { error } = await supabase
+      .from('cart_items')
+      .delete()
+      .eq('user_id', userId)
+
+    if (error) {
+      logger.error('[Cart API] Ошибка очистки корзины:', error)
+      throw error
+    }
+
+    return NextResponse.json({ message: 'Cart cleared successfully' })
+  } catch (error: any) {
+    logger.error('[Cart API] DELETE error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to clear cart' },
+      { status: 500 }
+    )
+  }
+}
+

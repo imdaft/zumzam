@@ -1,189 +1,121 @@
-import { createServerClient } from '@/lib/supabase/server'
-import { generateEmbedding } from '@/lib/ai/embeddings'
-import { NextResponse } from 'next/server'
-
 /**
- * GET /api/services - Получить список услуг (с фильтрами)
+ * API для получения услуг профиля
+ * GET /api/services?profile_id=...
+ * POST /api/services - создание новой услуги
  */
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const profile_id = searchParams.get('profile_id')
-  const category_id = searchParams.get('category_id')
-  const city = searchParams.get('city')
-  const active = searchParams.get('active')
-  const featured = searchParams.get('featured')
-  const q = searchParams.get('q') // Поисковый запрос
-  const limit = parseInt(searchParams.get('limit') || '20')
-  const offset = parseInt(searchParams.get('offset') || '0')
 
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { triggerEmbeddingRegeneration } from '@/lib/ai/trigger-embedding-regeneration'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    
-    let query = supabase
-      .from('services')
-      .select(`
-        *,
-        profiles:profile_id (
-          id,
-          slug,
-          display_name,
-          city,
-          rating,
-          verified
-        )
-      `)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
+    const { searchParams } = new URL(request.url)
+    const profileId = searchParams.get('profile_id') || searchParams.get('profileId')
 
-    // Фильтры
-    if (profile_id) {
-      query = query.eq('profile_id', profile_id)
-    }
-    if (category_id) {
-      query = query.eq('category_id', category_id)
-    }
-    if (active === 'true') {
-      query = query.eq('active', true)
-    }
-    if (featured === 'true') {
-      query = query.eq('featured', true)
-    }
-    
-    // Keyword поиск по title, description, tags
-    if (q) {
-      query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,tags.cs.{${q}}`)
-    }
-    
-    // Фильтр по городу через профиль
-    if (city) {
-      query = query.eq('profiles.city', city)
+    if (!profileId) {
+      return NextResponse.json({ error: 'profile_id or profileId is required' }, { status: 400 })
     }
 
-    const { data, error, count } = await query
-
-    if (error) throw error
-
-    return NextResponse.json({
-      services: data,
-      total: count,
-      limit,
-      offset,
+    const services = await prisma.services.findMany({
+      where: {
+        profile_id: profileId,
+        is_active: true,
+      },
+      orderBy: {
+        created_at: 'asc',
+      },
     })
+
+    return NextResponse.json({ services: services || [] })
   } catch (error: any) {
-    console.error('Get services error:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to fetch services' },
-      { status: 500 }
-    )
+    logger.error('Services API error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
 
-/**
- * POST /api/services - Создать новую услугу
- */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    
-    // Проверяем авторизацию
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Проверяем, что у пользователя есть профиль
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile) {
-      return NextResponse.json(
-        { error: 'Profile not found. Create a profile first.' },
-        { status: 404 }
-      )
-    }
-
-    // Получаем данные услуги
     const body = await request.json()
-    const {
-      title,
-      description,
-      category_id,
-      price,
-      price_from,
-      price_to,
-      currency,
-      duration_minutes,
-      age_from,
-      age_to,
-      capacity_min,
-      capacity_max,
-      tags,
-      photos,
-      video_url,
-      active,
-      featured,
-    } = body
 
-    // Генерируем embedding для семантического поиска
-    const textForEmbedding = `${title}. ${description}. Теги: ${tags?.join(', ') || ''}`
-    let embedding: number[] | null = null
+    logger.info('[Services API] POST request body:', {
+      profile_id: body.profile_id,
+      name: body.name || body.title,
+      service_type: body.service_type,
+      hasImages: body.images?.length || 0,
+      hasPackageIncludes: !!body.package_includes
+    })
+
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    })
+
+    const isAdmin = user?.role === 'admin'
+
+    if (!body.profile_id) {
+      return NextResponse.json({ error: 'profile_id is required' }, { status: 400 })
+    }
+    // Поддержка и title и name (title - старое название)
+    if (!body.name && !body.title) {
+      return NextResponse.json({ error: 'name or title is required' }, { status: 400 })
+    }
     
-    try {
-      embedding = await generateEmbedding(textForEmbedding)
-    } catch (embeddingError) {
-      console.error('Embedding generation error:', embeddingError)
+    // Переименовываем title в name если передан title
+    if (body.title && !body.name) {
+      body.name = body.title
+      delete body.title
     }
 
-    // Создаём услугу
-    const serviceData = {
-      profile_id: user.id,
-      title,
-      description,
-      category_id: category_id || null,
-      price: price || null,
-      price_from: price_from || null,
-      price_to: price_to || null,
-      currency: currency || 'RUB',
-      duration_minutes: duration_minutes || null,
-      age_from: age_from || null,
-      age_to: age_to || null,
-      capacity_min: capacity_min || null,
-      capacity_max: capacity_max || null,
-      tags: tags || [],
-      embedding: embedding ? `[${embedding.join(',')}]` : null,
-      photos: photos || [],
-      video_url: video_url || null,
-      active: active !== undefined ? active : true,
-      featured: featured || false,
+    // Проверяем владение профилем (если не админ)
+    if (!isAdmin) {
+      const profile = await prisma.profiles.findUnique({
+        where: { id: body.profile_id },
+        select: { user_id: true }
+      })
+
+      if (!profile || profile.user_id !== userId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
-    const { data: service, error: insertError } = await supabase
-      .from('services')
-      .insert(serviceData)
-      .select()
-      .single()
+    // Убираем поля, которых нет в таблице
+    const { package_includes, duration, title, ...cleanBody } = body
+    
+    // Подготавливаем данные для создания
+    const createData: any = {
+      ...cleanBody,
+      duration_minutes: duration, // Маппинг duration -> duration_minutes
+    }
+    
+    // Если есть package_includes, добавляем его в details
+    if (package_includes) {
+      createData.details = {
+        ...(createData.details || {}),
+        package_includes
+      }
+    }
 
-    if (insertError) throw insertError
+    const service = await prisma.services.create({
+      data: createData
+    })
 
-    return NextResponse.json(
-      { service, message: 'Service created successfully' },
-      { status: 201 }
-    )
+    // Триггерим регенерацию embeddings для профиля
+    if (service.profile_id) {
+      triggerEmbeddingRegeneration(service.profile_id)
+    }
+
+    logger.info('[Services API] Created service:', service.id)
+    return NextResponse.json({ service }, { status: 201 })
   } catch (error: any) {
-    console.error('Create service error:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to create service' },
-      { status: 500 }
-    )
+    logger.error('[Services API] POST error:', error)
+    return NextResponse.json({ error: error.message || 'Failed to create service' }, { status: 500 })
   }
 }
-

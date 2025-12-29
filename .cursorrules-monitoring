@@ -1,0 +1,49 @@
+# Мониторинг и логирование
+
+## Использование логгера
+
+Всегда используйте централизованный логгер вместо console.log:
+
+```typescript
+import { logger } from '@/lib/logger'
+
+// Debug (только в dev)
+logger.debug('[Component] Loading data', { userId })
+
+// Info - важные события
+logger.info('[API] Request successful')
+
+// Warning - потенциальные проблемы
+logger.warn('[Auth] Token expiring soon')
+
+// Error - критические ошибки
+logger.error('[DB] Query failed', error)
+```
+
+## Мониторинг API
+
+Для новых API routes используйте обёртку:
+
+```typescript
+import { withApiMonitoring } from '@/lib/monitoring/api-monitor'
+
+export const GET = withApiMonitoring(async (request) => {
+  // ваш код
+  return NextResponse.json({ data })
+}, '/api/your-endpoint')
+```
+
+## Проверка системы
+
+После изменений в БД или API запускайте:
+
+```bash
+npm run check-system
+```
+
+## Мониторинг в production
+
+- Регулярно проверяйте `/monitoring`
+- Настройте алерты на критические ошибки
+- Следите за медленными запросами (>1000ms для БД, >2000ms для API)
+

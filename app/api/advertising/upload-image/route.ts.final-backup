@@ -1,0 +1,112 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * POST /api/advertising/upload-image
+ * Загрузка изображения для рекламной кампании
+ */
+export async function POST(request: NextRequest) {
+  try {
+    console.log('[Upload Image API] 🚀 POST request received')
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    console.log('[Upload Image API] ✅ User authenticated:', userId)
+
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+
+    if (!file) {
+      console.log('[Upload Image API] ❌ No file provided')
+      return NextResponse.json(
+        { error: 'Файл не предоставлен' },
+        { status: 400 }
+      )
+    }
+
+    console.log('[Upload Image API] 📦 File received:', file.name, file.size, file.type)
+
+    // Проверка типа файла
+    if (!file.type.startsWith('image/')) {
+      console.log('[Upload Image API] ❌ Invalid file type:', file.type)
+      return NextResponse.json(
+        { error: 'Файл должен быть изображением' },
+        { status: 400 }
+      )
+    }
+
+    // Проверка размера (макс 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      console.log('[Upload Image API] ❌ File too large:', file.size)
+      return NextResponse.json(
+        { error: 'Размер файла не должен превышать 5MB' },
+        { status: 400 }
+      )
+    }
+
+    // Генерируем уникальное имя файла
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${userId}-${Date.now()}.${fileExt}`
+    const filePath = `advertising/${fileName}`
+
+    console.log('[Upload Image API] 📁 Uploading to:', filePath)
+
+    // Конвертируем File в Buffer
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
+    // Загружаем файл в Supabase Storage
+    const { error: uploadError, data } = await supabase.storage
+      .from('advertising')
+      .upload(filePath, buffer, {
+        contentType: file.type,
+        cacheControl: '3600',
+        upsert: false
+      })
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    // Получаем публичный URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('advertising')
+      .getPublicUrl(filePath)
+
+    console.log('[Upload Image API] ✅ File uploaded successfully:', publicUrl)
+
+    return NextResponse.json({
+      url: publicUrl,
+      path: filePath
+    })
+  } catch (error: any) {
+    console.error('[Upload Image API] ❌ Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера', details: error?.message },
+      { status: 500 }
+    )
+  }
+}
+

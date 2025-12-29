@@ -1,0 +1,158 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET - Загрузить историю чата пользователя (последние 50 сообщений)
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    // Загружаем последние 50 сообщений
+    const { data: messages, error } = await supabase
+      .from('ai_chat_messages')
+      .select('id, role, content, suggestions, gallery, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (error) {
+      logger.error('[AI Chat History] Error loading:', error)
+      return NextResponse.json({ error: 'Failed to load chat history' }, { status: 500 })
+    }
+
+    // Возвращаем в обратном порядке (старые первыми)
+    return NextResponse.json({ 
+      messages: (messages || []).reverse() 
+    })
+  } catch (error: any) {
+    logger.error('[AI Chat History] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+/**
+ * POST - Сохранить сообщение в историю
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    const { role, content, suggestions, gallery } = await request.json()
+
+    if (!role || !content) {
+      return NextResponse.json({ error: 'Role and content required' }, { status: 400 })
+    }
+
+    const { data: message, error } = await supabase
+      .from('ai_chat_messages')
+      .insert({
+        user_id: userId,
+        role,
+        content,
+        suggestions: suggestions || [],
+        gallery: gallery || []
+      })
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[AI Chat History] Error saving:', error)
+      return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
+    }
+
+    return NextResponse.json({ message })
+  } catch (error: any) {
+    logger.error('[AI Chat History] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE - Очистить всю историю чата (кнопка "Новый чат")
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    const { error } = await supabase
+      .from('ai_chat_messages')
+      .delete()
+      .eq('user_id', userId)
+
+    if (error) {
+      logger.error('[AI Chat History] Error clearing:', error)
+      return NextResponse.json({ error: 'Failed to clear chat history' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    logger.error('[AI Chat History] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,97 @@
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { createClient as createBrowserClient } from '@supabase/supabase-js'
+
+/**
+ * POST /api/auth/verify-password
+ * Проверяет пароль текущего пользователя
+ */
+export async function POST(request: Request) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    if (authError || !user || !user.email) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Проверяем способ авторизации пользователя
+    const { data: { session } } = await supabase.auth.getSession()
+    const isOAuthUser = session?.user?.app_metadata?.provider !== 'email'
+
+    const body = await request.json()
+    const { password } = body
+
+    // Для OAuth пользователей (Яндекс, Google и т.д.) - не требуем пароль
+    if (isOAuthUser) {
+      return NextResponse.json({ 
+        verified: true,
+        message: 'OAuth пользователь подтвержден',
+        isOAuth: true
+      })
+    }
+
+    // Для email/password пользователей - проверяем пароль
+    if (!password) {
+      return NextResponse.json(
+        { error: 'Password is required' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем пароль через попытку входа
+    // Создаем отдельный клиент без cookies, чтобы не менять текущую сессию
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    
+    const verifyClient = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false, // Не сохраняем сессию
+        autoRefreshToken: false,
+      }
+    })
+
+    const { data: verifyData, error: verifyError } = await verifyClient.auth.signInWithPassword({
+      email: user.email,
+      password: password
+    })
+
+    if (verifyError || !verifyData.user) {
+      return NextResponse.json(
+        { error: 'Неверный пароль', verified: false },
+        { status: 401 }
+      )
+    }
+
+    // Если пароль верный - возвращаем успех
+    return NextResponse.json({ 
+      verified: true,
+      message: 'Пароль верный',
+      isOAuth: false
+    })
+
+  } catch (error: any) {
+    console.error('Verify password error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+

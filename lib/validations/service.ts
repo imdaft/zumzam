@@ -1,264 +1,225 @@
 import { z } from 'zod'
 
-/**
- * Схема валидации для создания/обновления услуги
- */
-export const serviceSchema = z.object({
-  title: z
-    .string()
-    .min(5, 'Название должно содержать минимум 5 символов')
-    .max(200, 'Название слишком длинное'),
-  
-  description: z
-    .string()
-    .min(20, 'Описание должно содержать минимум 20 символов')
-    .max(3000, 'Описание слишком длинное'),
-  
-  category_id: z
-    .string()
-    .uuid('Некорректный ID категории')
-    .optional()
-    .nullable(),
-  
-  // Цена может быть фиксированной или диапазоном
-  price: z
-    .number()
-    .min(0, 'Цена не может быть отрицательной')
-    .optional()
-    .nullable(),
-  
-  price_from: z
-    .number()
-    .min(0, 'Цена не может быть отрицательной')
-    .optional()
-    .nullable(),
-  
-  price_to: z
-    .number()
-    .min(0, 'Цена не может быть отрицательной')
-    .optional()
-    .nullable(),
-  
-  currency: z
-    .string()
-    .default('RUB'),
-  
-  duration_minutes: z
-    .number()
-    .int('Длительность должна быть целым числом')
-    .min(15, 'Минимальная длительность 15 минут')
-    .max(1440, 'Максимальная длительность 24 часа')
-    .optional()
-    .nullable(),
-  
-  age_from: z
-    .number()
-    .int('Возраст должен быть целым числом')
-    .min(0, 'Возраст не может быть отрицательным')
-    .max(18, 'Максимальный возраст 18 лет')
-    .optional()
-    .nullable(),
-  
-  age_to: z
-    .number()
-    .int('Возраст должен быть целым числом')
-    .min(0, 'Возраст не может быть отрицательным')
-    .max(18, 'Максимальный возраст 18 лет')
-    .optional()
-    .nullable(),
-  
-  capacity_min: z
-    .number()
-    .int('Вместимость должна быть целым числом')
-    .min(1, 'Минимальная вместимость 1 человек')
-    .optional()
-    .nullable(),
-  
-  capacity_max: z
-    .number()
-    .int('Вместимость должна быть целым числом')
-    .min(1, 'Минимальная вместимость 1 человек')
-    .optional()
-    .nullable(),
-  
-  tags: z
-    .array(z.string())
-    .max(10, 'Максимум 10 тегов')
-    .default([]),
-  
-  active: z
-    .boolean()
-    .default(true),
-  
-  featured: z
-    .boolean()
-    .default(false),
-}).refine(
-  (data) => {
-    // Проверяем, что указана хотя бы одна цена
-    return data.price !== null || (data.price_from !== null && data.price_to !== null)
-  },
-  {
-    message: 'Укажите фиксированную цену или диапазон цен',
-    path: ['price'],
-  }
-).refine(
-  (data) => {
-    // Если указан диапазон цен, price_to должна быть больше price_from
-    if (data.price_from !== null && data.price_to !== null) {
-      return data.price_to >= data.price_from
-    }
-    return true
-  },
-  {
-    message: 'Максимальная цена должна быть больше или равна минимальной',
-    path: ['price_to'],
-  }
-).refine(
-  (data) => {
-    // Если указан возраст, age_to должен быть больше age_from
-    if (data.age_from !== null && data.age_to !== null) {
-      return data.age_to >= data.age_from
-    }
-    return true
-  },
-  {
-    message: 'Максимальный возраст должен быть больше или равен минимальному',
-    path: ['age_to'],
-  }
-).refine(
-  (data) => {
-    // Если указана вместимость, capacity_max должна быть больше capacity_min
-    if (data.capacity_min !== null && data.capacity_max !== null) {
-      return data.capacity_max >= data.capacity_min
-    }
-    return true
-  },
-  {
-    message: 'Максимальная вместимость должна быть больше или равна минимальной',
-    path: ['capacity_max'],
-  }
-)
+export const ServiceTypeEnum = z.enum([
+  'animator',
+  'show',
+  'venue',
+  'quest',
+  'master_class',
+  'photographer',
+  'decoration', // Оформление
+  'other',
+  'service', // Дополнительная услуга
+  'package', // Пакетное предложение
+  'turnkey', // Праздник под ключ
+])
 
-export type ServiceInput = z.infer<typeof serviceSchema>
+export type ServiceType = z.infer<typeof ServiceTypeEnum>
 
-/**
- * Схема для обновления услуги (все поля опциональны)
- */
-export const serviceUpdateSchema = z.object({
-  title: z.string().min(5).max(200).optional(),
-  description: z.string().min(20).max(3000).optional(),
-  category_id: z.string().uuid().optional().nullable(),
-  price: z.number().min(0).optional().nullable(),
-  price_from: z.number().min(0).optional().nullable(),
-  price_to: z.number().min(0).optional().nullable(),
-  currency: z.string().optional(),
-  duration_minutes: z.number().int().min(15).max(1440).optional().nullable(),
-  age_from: z.number().int().min(0).max(18).optional().nullable(),
-  age_to: z.number().int().min(0).max(18).optional().nullable(),
-  capacity_min: z.number().int().min(1).optional().nullable(),
-  capacity_max: z.number().int().min(1).optional().nullable(),
-  tags: z.array(z.string()).max(10).optional(),
-  active: z.boolean().optional(),
-  featured: z.boolean().optional(),
-})
-
-export type ServiceUpdateInput = z.infer<typeof serviceUpdateSchema>
-
-/**
- * Популярные теги для услуг
- */
+// Теги для фильтрации услуг
 export const SERVICE_TAGS = [
-  // Типы мероприятий
-  'День рождения',
-  'Выпускной',
-  'Новый год',
-  'Корпоратив',
-  '8 марта',
-  '23 февраля',
-  'Выпускной в саду',
-  'Выпускной в школе',
-  
-  // Форматы
-  'Праздник под ключ',
-  'Выездное мероприятие',
-  'В студии',
-  'На природе',
-  'Онлайн',
-  'Офлайн',
-  
-  // Направления
-  'Аниматоры',
+  'Аниматор',
+  'Шоу',
+  'Площадка',
   'Квест',
   'Мастер-класс',
-  'Шоу-программа',
-  'Научное шоу',
-  'Фокусы',
-  'Театральное представление',
-  'Кукольный театр',
-  'Дискотека',
-  'Караоке',
-  
-  // Персонажи и темы
-  'Супергерои',
-  'Принцессы',
-  'Единороги',
-  'Пираты',
-  'Феи',
-  'Роботы',
-  'Космос',
-  'Динозавры',
-  'Гарри Поттер',
-  'Холодное сердце',
-  'Человек-паук',
-  'Minecraft',
-  
-  // Активности
-  'Игры',
-  'Конкурсы',
-  'Танцы',
-  'Песни',
-  'Рисование',
-  'Лепка',
-  'Аквагрим',
-  'Твистинг (шарики)',
-  'Фотосессия',
-  'Подарки',
-  
-  // Дополнительно
-  'С реквизитом',
-  'С костюмами',
-  'С декорациями',
-  'С музыкой',
-  'С угощениями',
-  'С аниматором',
-  'Без аниматора',
-]
+  'Фотограф',
+  'Оформление',
+  'Для малышей',
+  'Для школьников',
+  'Интерактив',
+  'На выезд',
+  'В помещении',
+  'На улице'
+] as const
 
-/**
- * Категории услуг по возрастам
- */
-export const AGE_CATEGORIES = [
-  { label: '0-3 года', value: { from: 0, to: 3 } },
-  { label: '3-6 лет', value: { from: 3, to: 6 } },
-  { label: '6-9 лет', value: { from: 6, to: 9 } },
-  { label: '9-12 лет', value: { from: 9, to: 12 } },
-  { label: '12+ лет', value: { from: 12, to: 18 } },
-  { label: 'Любой возраст', value: { from: 0, to: 18 } },
-]
+// --- Base Service Schema ---
+export const baseServiceSchema = z.object({
+  title: z.string().min(3, 'Минимум 3 символа').max(100), // Для формы
+  name: z.string().optional(), // Для API (автоматически маппится из title)
+  description: z.string().min(1, 'Описание обязательно'),
+  price: z.coerce.number().min(0),
+  price_type: z.enum(['fixed', 'hourly', 'per_person', 'from']),
+  duration: z.coerce.number().optional(), // in minutes
+  images: z.array(z.string()).default([]), // Убрал .url() - файлы могут быть локальными путями
+  service_type: ServiceTypeEnum,
+  is_additional: z.boolean().default(false), // Добавлено поле для дополнительных услуг
+  is_package: z.boolean().default(false), // Праздник под ключ
+  package_includes: z.array(z.string()).default([]), // Что включено в пакет (для одиночного пакета)
+})
 
-/**
- * Популярные длительности
- */
-export const DURATIONS = [
-  { label: '30 минут', value: 30 },
-  { label: '1 час', value: 60 },
-  { label: '1.5 часа', value: 90 },
-  { label: '2 часа', value: 120 },
-  { label: '3 часа', value: 180 },
-  { label: '4 часа', value: 240 },
-  { label: 'Полдня (6 часов)', value: 360 },
-  { label: 'Целый день (8+ часов)', value: 480 },
-]
+// --- Details Schemas ---
 
+export const animatorDetailsSchema = z.object({
+  characters: z.array(z.string()).default([]), // Список персонажей
+  is_costume_included: z.boolean().default(true),
+  has_microphone: z.boolean().default(false),
+  experience_years: z.coerce.number().optional(),
+  tier_packages: z.array(z.object({
+    name: z.string(),
+    price: z.number(),
+    duration: z.number().default(60),
+    includes: z.array(z.string()),
+    highlighted_includes: z.array(z.string()).optional(), // Пункты, которые нужно выделить как уникальные
+    savings: z.number().optional(), // Экономия в рублях (например, 5000 = экономия 5000₽)
+    price_options: z.array(z.object({
+      condition: z.string(), // "Будни", "Выходные", "Пятница" и т.д.
+      price: z.number()
+    })).optional() // До 3 вариантов цены
+  })).optional(), // Для многоуровневых пакетов
+})
 
+export const showDetailsSchema = z.object({
+  program_type: z.string().optional(), // e.g. "Мыльное", "Химическое"
+  tech_requirements: z.string().optional(),
+  safe_area_width: z.coerce.number().optional(),
+  safe_area_depth: z.coerce.number().optional(),
+  tier_packages: z.array(z.object({
+    name: z.string(),
+    price: z.number(),
+    duration: z.number().default(60),
+    includes: z.array(z.string()),
+    highlighted_includes: z.array(z.string()).optional(),
+    savings: z.number().optional(),
+    price_options: z.array(z.object({
+      condition: z.string(),
+      price: z.number()
+    })).optional()
+  })).optional(),
+})
+
+export const venueDetailsSchema = z.object({
+  capacity: z.coerce.number().min(1),
+  area_sqm: z.coerce.number().optional(),
+  ceiling_height: z.coerce.number().optional(),
+  amenities: z.array(z.string()).default([]), // "WiFi", "Parking"
+  tier_packages: z.array(z.object({
+    name: z.string(),
+    price: z.number(),
+    duration: z.number().default(60),
+    includes: z.array(z.string()),
+    highlighted_includes: z.array(z.string()).optional(),
+    savings: z.number().optional(),
+    price_options: z.array(z.object({
+      condition: z.string(),
+      price: z.number()
+    })).optional()
+  })).optional(),
+})
+
+export const questDetailsSchema = z.object({
+  age_min: z.coerce.number().min(0).default(6),
+  age_max: z.coerce.number().min(0).default(16),
+  participants_min: z.coerce.number().min(1).default(2),
+  participants_max: z.coerce.number().min(1).default(10),
+  difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
+  tier_packages: z.array(z.object({
+    name: z.string(),
+    price: z.number(),
+    duration: z.number().default(60),
+    includes: z.array(z.string()),
+    highlighted_includes: z.array(z.string()).optional(),
+    savings: z.number().optional(),
+    price_options: z.array(z.object({
+      condition: z.string(),
+      price: z.number()
+    })).optional()
+  })).optional(),
+})
+
+export const masterClassDetailsSchema = z.object({
+  age_min: z.coerce.number().default(3),
+  materials_included: z.boolean().default(true),
+  result_take_home: z.boolean().default(true), // Забирают ли поделку с собой
+  tier_packages: z.array(z.object({
+    name: z.string(),
+    price: z.number(),
+    duration: z.number().default(60),
+    includes: z.array(z.string()),
+    highlighted_includes: z.array(z.string()).optional(),
+    savings: z.number().optional(),
+    price_options: z.array(z.object({
+      condition: z.string(),
+      price: z.number()
+    })).optional()
+  })).optional(),
+})
+
+export const photographerDetailsSchema = z.object({
+  delivery_days: z.coerce.number().default(7),
+  photos_count: z.coerce.number().optional(), // Количество фото
+  equipment: z.string().optional(),
+  tier_packages: z.array(z.object({
+    name: z.string(),
+    price: z.number(),
+    duration: z.number().default(60),
+    includes: z.array(z.string()),
+    price_options: z.array(z.object({
+      condition: z.string(),
+      price: z.number()
+    })).optional()
+  })).optional(),
+})
+
+// --- Combined Schema ---
+// Мы используем discriminated union, чтобы валидировать details в зависимости от service_type
+export const serviceSchema = z.discriminatedUnion('service_type', [
+  baseServiceSchema.extend({ service_type: z.literal('animator'), details: animatorDetailsSchema }),
+  baseServiceSchema.extend({ service_type: z.literal('show'), details: showDetailsSchema }),
+  baseServiceSchema.extend({ service_type: z.literal('venue'), details: venueDetailsSchema }),
+  baseServiceSchema.extend({ service_type: z.literal('quest'), details: questDetailsSchema }),
+  baseServiceSchema.extend({ service_type: z.literal('master_class'), details: masterClassDetailsSchema }),
+  baseServiceSchema.extend({ service_type: z.literal('photographer'), details: photographerDetailsSchema }),
+  baseServiceSchema.extend({ service_type: z.literal('decoration'), details: z.object({
+    tier_packages: z.array(z.object({
+      name: z.string(),
+      price: z.number(),
+      includes: z.array(z.string())
+    })).optional(),
+  }) }),
+  baseServiceSchema.extend({ service_type: z.literal('other'), details: z.object({
+    tier_packages: z.array(z.object({
+      name: z.string(),
+      price: z.number(),
+      includes: z.array(z.string())
+    })).optional(),
+  }) }),
+  // Новые типы для разделения услуг
+  baseServiceSchema.extend({ service_type: z.literal('service'), details: z.object({
+    tier_packages: z.array(z.object({
+      name: z.string(),
+      price: z.number(),
+      includes: z.array(z.string())
+    })).optional(),
+  }) }),
+  baseServiceSchema.extend({ service_type: z.literal('package'), details: z.object({
+    tier_packages: z.array(z.object({
+      name: z.string(),
+      price: z.number(),
+      duration: z.number().default(60),
+      includes: z.array(z.string()),
+      highlighted_includes: z.array(z.string()).optional(),
+      savings: z.number().optional(),
+      price_options: z.array(z.object({
+        condition: z.string(),
+        price: z.number()
+      })).optional()
+    })).optional(),
+  }) }),
+  baseServiceSchema.extend({ service_type: z.literal('turnkey'), details: z.object({
+    tier_packages: z.array(z.object({
+      name: z.string(),
+      price: z.number(),
+      duration: z.number().default(60),
+      includes: z.array(z.string()),
+      highlighted_includes: z.array(z.string()).optional(),
+      savings: z.number().optional(),
+      price_options: z.array(z.object({
+        condition: z.string(),
+        price: z.number()
+      })).optional()
+    })).optional(),
+  }) }),
+])
+
+export type ServiceFormValues = z.infer<typeof serviceSchema>

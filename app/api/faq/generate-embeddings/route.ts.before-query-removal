@@ -1,0 +1,143 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { generateEmbedding } from '@/lib/ai/embeddings'
+
+/**
+ * Генерирует embeddings для FAQ записей без embeddings
+ */
+async function generateFaqEmbeddings() {
+  // Supabase client removed
+  
+  // Получаем FAQ записи без embeddings
+  const { data: faqItems, error: fetchError } = await supabase
+    .from('faq_items')
+    .select('id, question, answer')
+    .is('embedding', null)
+    .eq('is_active', true)
+
+  // Error handling removed (Prisma throws exceptions)
+  }
+
+  if (!faqItems || faqItems.length === 0) {
+    return { 
+      message: 'No FAQ items without embeddings found',
+      updated: 0 
+    }
+  }
+
+  logger.info(`[FAQ Embeddings] Generating embeddings for ${faqItems.length} items...`)
+
+  let successCount = 0
+  const results: Array<{ id: string; success: boolean; error?: string }> = []
+
+  for (const item of faqItems) {
+    try {
+      // Генерируем embedding для вопроса + ответа
+      const textForEmbedding = `${item.question} ${item.answer}`
+      const embedding = await generateEmbedding(textForEmbedding)
+
+      if (embedding) {
+        // Обновляем запись в БД
+        const { error: updateError } = await supabase
+          .from('faq_items')
+          .update({ embedding })
+          .eq('id', item.id)
+
+        if (updateError) {
+          logger.error(`[FAQ Embeddings] Update error for ${item.id}:`, updateError)
+          results.push({ id: item.id, success: false, error: updateError.message })
+        } else {
+          successCount++
+          results.push({ id: item.id, success: true })
+        }
+      } else {
+        results.push({ id: item.id, success: false, error: 'Embedding generation failed' })
+      }
+
+      // Небольшая задержка между запросами к API
+      await new Promise(resolve => setTimeout(resolve, 200))
+    } catch (err) {
+      logger.error(`[FAQ Embeddings] Error for ${item.id}:`, err)
+      results.push({ id: item.id, success: false, error: String(err) })
+    }
+  }
+
+  logger.info(`[FAQ Embeddings] Done. Updated ${successCount}/${faqItems.length} items`)
+
+  return {
+    message: `Generated embeddings for FAQ items`,
+    total: faqItems.length,
+    updated: successCount,
+    results
+  }
+}
+
+/**
+ * POST /api/faq/generate-embeddings
+ */
+export async function POST() {
+  try {
+    const result = await generateFaqEmbeddings()
+    if ('error' in result && result.status) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+    return NextResponse.json(result)
+  } catch (error) {
+    logger.error('[FAQ Embeddings] Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * GET /api/faq/generate-embeddings
+ * Добавьте ?action=generate для запуска генерации
+ */
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const action = searchParams.get('action')
+  
+  // Если action=generate, запускаем генерацию
+  if (action === 'generate') {
+    try {
+      const result = await generateFaqEmbeddings()
+      if ('error' in result && result.status) {
+        return NextResponse.json({ error: result.error }, { status: result.status })
+      }
+      return NextResponse.json(result)
+    } catch (error) {
+      logger.error('[FAQ Embeddings] Error:', error)
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    }
+  }
+  
+  // По умолчанию возвращаем статус
+  try {
+    // Supabase client removed
+    
+    const { data: stats } = await supabase
+      .from('faq_items')
+      .select('id, embedding')
+      .eq('is_active', true)
+
+    const total = stats?.length || 0
+    const withEmbeddings = stats?.filter(item => item.embedding !== null).length || 0
+
+    return NextResponse.json({
+      total,
+      withEmbeddings,
+      withoutEmbeddings: total - withEmbeddings,
+      ready: withEmbeddings === total && total > 0,
+      hint: 'Для генерации embeddings добавьте ?action=generate'
+    })
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to get stats' }, { status: 500 })
+  }
+}

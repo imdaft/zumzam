@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { CITIES } from '@/lib/constants'
 import { SERVICE_TAGS } from '@/lib/validations/service'
 import {
@@ -63,18 +62,18 @@ export function ServiceFilters({ onFilterChange }: ServiceFiltersProps) {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Фильтры</CardTitle>
+      <Card className="rounded-[24px] border border-gray-100 bg-white shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg font-bold text-gray-900">Фильтры</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Город */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Город</label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Город</label>
             <select
               value={city}
               onChange={(e) => setCity(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm"
+              className="flex h-11 w-full rounded-[18px] border border-gray-200 bg-white px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-100 md:text-sm"
             >
               <option value="">Все города</option>
               {CITIES.map((cityName) => (
@@ -87,7 +86,7 @@ export function ServiceFilters({ onFilterChange }: ServiceFiltersProps) {
 
           {/* Цена */}
           <div>
-            <label className="mb-2 block text-sm font-medium">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Цена: {priceRange[0].toLocaleString('ru-RU')} - {priceRange[1].toLocaleString('ru-RU')} ₽
             </label>
             <Slider
@@ -102,7 +101,7 @@ export function ServiceFilters({ onFilterChange }: ServiceFiltersProps) {
 
           {/* Возраст */}
           <div>
-            <label className="mb-2 block text-sm font-medium">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Возраст: {ageRange[0]} - {ageRange[1]} лет
             </label>
             <Slider
@@ -117,7 +116,7 @@ export function ServiceFilters({ onFilterChange }: ServiceFiltersProps) {
 
           {/* Теги */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Теги</label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Теги</label>
             <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto">
               {SERVICE_TAGS.slice(0, 20).map((tag) => (
                 <button
@@ -126,8 +125,8 @@ export function ServiceFilters({ onFilterChange }: ServiceFiltersProps) {
                   onClick={() => handleTagToggle(tag)}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                     selectedTags.includes(tag)
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-orange-100 hover:text-orange-700'
                   }`}
                 >
                   {tag}
@@ -135,7 +134,7 @@ export function ServiceFilters({ onFilterChange }: ServiceFiltersProps) {
               ))}
             </div>
             {selectedTags.length > 0 && (
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="mt-2 text-xs text-gray-500">
                 Выбрано: {selectedTags.length}
               </p>
             )}
@@ -143,10 +142,10 @@ export function ServiceFilters({ onFilterChange }: ServiceFiltersProps) {
 
           {/* Кнопки */}
           <div className="flex gap-2">
-            <Button onClick={applyFilters} className="flex-1">
+            <Button onClick={applyFilters} className="flex-1 rounded-full bg-orange-500 hover:bg-orange-600">
               Применить
             </Button>
-            <Button onClick={resetFilters} variant="outline">
+            <Button onClick={resetFilters} variant="outline" className="rounded-full">
               Сбросить
             </Button>
           </div>

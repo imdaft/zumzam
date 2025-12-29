@@ -1,0 +1,74 @@
+/**
+ * API для управления этапами воронки
+ * POST - создать новый этап
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: pipelineId } = await params
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { name, color = 'blue', position } = body
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    }
+
+    // Если position не указан, ставим между "Входящие" (0) и "Забронировано" (50)
+    // Логика: находим последний кастомный этап (позиция 1-49) и ставим после него
+    let stagePosition = position
+    if (stagePosition === undefined) {
+      const { data: stages } = await supabase
+        .from('pipeline_stages')
+        .select('position')
+        .eq('pipeline_id', pipelineId)
+        .gt('position', 0) // После "Входящие"
+        .lt('position', 50) // Перед "Забронировано"
+        .order('position', { ascending: false })
+        .limit(1)
+
+      if (stages && stages.length > 0) {
+        // Есть кастомные этапы - ставим после последнего
+        stagePosition = Math.floor((stages[0].position + 50) / 2)
+      } else {
+        // Нет кастомных - ставим в середину между 0 и 50
+        stagePosition = 25
+      }
+    }
+
+    const { data: stage, error } = await supabase
+      .from('pipeline_stages')
+      .insert({
+        pipeline_id: pipelineId,
+        name: name.trim(),
+        color,
+        position: stagePosition,
+        is_system: false
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating stage:', error)
+      return NextResponse.json({ error: 'Failed to create stage' }, { status: 500 })
+    }
+
+    return NextResponse.json({ stage }, { status: 201 })
+  } catch (error: any) {
+    console.error('Stage POST error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+

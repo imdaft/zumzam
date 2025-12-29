@@ -1,0 +1,85 @@
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+/**
+ * GET /api/profiles/check - Проверить наличие профилей у текущего пользователя
+ * Возвращает список профилей и (для совместимости) первый профиль как основной
+ */
+export async function GET() {
+  try {
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Определяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+
+    // Получаем список профилей
+    const profilesQuery = supabase
+      .from('profiles')
+      .select(`
+        *,
+        profile_locations (
+          id,
+          city,
+          address,
+          geo_location,
+          name,
+          phone,
+          email,
+          working_hours,
+          active,
+          is_main,
+          created_at,
+          updated_at,
+          details,
+          yandex_url,
+          yandex_rating,
+          yandex_review_count
+        )
+      `)
+      .order('created_at', { ascending: false })
+
+    if (!isAdmin) {
+      profilesQuery.eq('user_id', user.id)
+    }
+
+    const { data: profiles, error: dbError } = await profilesQuery
+
+    if (dbError) {
+      console.error('Database error:', dbError)
+      return NextResponse.json(
+        { error: dbError.message || 'Failed to check profiles' },
+        { status: 500 }
+      )
+    }
+
+    const hasProfiles = profiles && profiles.length > 0
+    
+    return NextResponse.json({ 
+      exists: hasProfiles, 
+      profile: hasProfiles ? profiles[0] : null, // Для обратной совместимости
+      profiles: profiles || [] 
+    })
+  } catch (error: any) {
+    console.error('API error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}

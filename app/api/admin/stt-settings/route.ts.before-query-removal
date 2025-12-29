@@ -1,0 +1,144 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/admin/stt-settings
+ * Получить все настройки STT
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Получаем все настройки STT
+    const { data: settings, error } = await supabase
+      .from('stt_settings')
+      .select('*')
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      logger.error('[STT Settings GET] Error:', error)
+      return NextResponse.json({ error: 'Failed to fetch STT settings' }, { status: 500 })
+    }
+
+    return NextResponse.json({ settings }, { status: 200 })
+  } catch (error: any) {
+    logger.error('[STT Settings GET] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+/**
+ * PATCH /api/admin/stt-settings
+ * Переключить активный провайдер STT
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { id } = body
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required' }, { status: 400 })
+    }
+
+    // Деактивируем все настройки
+    await supabase
+      .from('stt_settings')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .neq('id', '00000000-0000-0000-0000-000000000000') // Обновляем все
+
+    // Активируем выбранную
+    const { data: activatedSetting, error } = await supabase
+      .from('stt_settings')
+      .update({ is_active: true, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[STT Settings PATCH] Error:', error)
+      return NextResponse.json({ error: 'Failed to activate STT setting' }, { status: 500 })
+    }
+
+    logger.info(`[STT Settings] Activated: ${activatedSetting.name} (${activatedSetting.provider})`)
+
+    return NextResponse.json({ setting: activatedSetting }, { status: 200 })
+  } catch (error: any) {
+    logger.error('[STT Settings PATCH] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

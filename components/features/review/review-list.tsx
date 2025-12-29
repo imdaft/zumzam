@@ -41,13 +41,17 @@ export function ReviewList({ profileId }: ReviewListProps) {
       const response = await fetch(`/api/reviews?${params.toString()}`)
       
       if (!response.ok) {
-        throw new Error('Failed to load reviews')
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to load reviews:', response.status, errorData)
+        setReviews([]) // Устанавливаем пустой массив вместо ошибки
+        return
       }
 
       const data = await response.json()
       setReviews(data.reviews || [])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Load reviews error:', error)
+      setReviews([]) // Устанавливаем пустой массив при ошибке
     } finally {
       setIsLoading(false)
     }

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Генерация Embeddings</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 15px 32px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
+    #result {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 4px;
+      white-space: pre-wrap;
+    }
+    .loading {
+      color: #2196F3;
+    }
+    .success {
+      color: #4CAF50;
+    }
+    .error {
+      color: #f44336;
+    }
+  </style>
+</head>
+<body>
+  <h1>🤖 Генерация Embeddings</h1>
+  <p>Этот инструмент генерирует embeddings для всех профилей и услуг без них.</p>
+  
+  <button id="generateBtn" onclick="generateEmbeddings()">
+    🚀 Запустить генерацию
+  </button>
+  
+  <div id="result"></div>
+
+  <script>
+    async function generateEmbeddings() {
+      const btn = document.getElementById('generateBtn')
+      const result = document.getElementById('result')
+      
+      btn.disabled = true
+      result.innerHTML = '<span class="loading">⏳ Генерация запущена... Это может занять несколько минут.</span>'
+      
+      try {
+        const response = await fetch('/api/admin/generate-embeddings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        const data = await response.json()
+        
+        if (data.success) {
+          result.innerHTML = `
+<span class="success">✅ Генерация завершена успешно!</span>
+
+<strong>Результаты:</strong>
+📊 Профили:
+  - Обновлено: ${data.results.profiles.updated}
+  - Ошибок: ${data.results.profiles.errors}
+
+📊 Услуги:
+  - Обновлено: ${data.results.services.updated}
+  - Ошибок: ${data.results.services.errors}
+          `
+        } else {
+          result.innerHTML = `<span class="error">❌ Ошибка: ${data.error}</span>`
+        }
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Ошибка сети: ${error.message}</span>`
+      } finally {
+        btn.disabled = false
+      }
+    }
+  </script>
+</body>
+</html>
+

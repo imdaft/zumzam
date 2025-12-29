@@ -1,0 +1,172 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { aiService } from '@/lib/services/ai-service'
+
+export const dynamic = 'force-dynamic'
+
+interface DraftRequestBody {
+  text: string
+}
+
+interface ParsedDraft {
+  category?: string
+  title?: string
+  description?: string
+  eventDate?: string
+  eventTime?: string
+  city?: string
+  district?: string
+  address?: string
+  venueType?: string
+  budget?: number
+  budgetNegotiable?: boolean
+  childrenCount?: number
+  childrenAgeRange?: { from?: number; to?: number }
+  birthdayChild?: { name?: string; age?: number }
+  contactName?: string
+  contactPhone?: string
+  details?: Record<string, unknown>
+}
+
+const DEFAULT_CITY = 'Санкт-Петербург'
+
+function buildPrompt(userText: string) {
+  return `Ты — ассистент, который превращает свободный русский текст пользователя в структурированные данные заявки на услугу для детского мероприятия.
+
+Вход: один абзац с деталями (дата, время, возраст ребёнка, бюджет, адрес, формат).
+Надо извлечь поля и вернуть СТРОГО JSON без пояснений.
+
+Поле category выбери из: animator, show, quest, masterclass, host, photo_video, santa, face_painting, costume, other.
+Поле venueType выбери из: home, restaurant, kids_center, club, outdoor, school, office, other.
+
+Формат ответа:
+{
+  "category": "show",
+  "title": "Фокусник на день рождения",
+  "description": "Короткое описание без воды",
+  "eventDate": "2025-12-25",
+  "eventTime": "17:00",
+  "city": "Санкт-Петербург",
+  "district": "Приморский",
+  "address": "Ресторан Рыба на даче",
+  "venueType": "restaurant",
+  "budget": 15000,
+  "budgetNegotiable": false,
+  "childrenCount": 10,
+  "childrenAgeRange": { "from": 10, "to": 10 },
+  "birthdayChild": { "name": "Игорь", "age": 10 },
+  "contactName": "Имя заказчика если указано",
+  "contactPhone": "+7...",
+  "details": { "keywords": ["фокусы", "выезд за город"] }
+}
+
+Требования:
+- Дата в формате YYYY-MM-DD, время HH:MM (24h), если нет — оставь пустым.
+- Бюджет числом (без валюты и слов).
+- Если город не указан, поставь "${DEFAULT_CITY}".
+- Не добавляй лишних полей. Только JSON.`
+}
+
+function safeParseDraft(text: string | null): ParsedDraft | null {
+  if (!text) return null
+  try {
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start === -1 || end === -1) return null
+    const jsonText = text.slice(start, end + 1)
+    const parsed = JSON.parse(jsonText)
+    return parsed as ParsedDraft
+  } catch (error) {
+    logger.error('[AI Draft] Не удалось распарсить JSON от модели', error)
+    return null
+  }
+}
+
+function normalizeDraft(draft: ParsedDraft): ParsedDraft {
+  const normalized: ParsedDraft = {
+    category: draft.category || 'show',
+    title: draft.title || 'Заявка на праздник',
+    description: draft.description,
+    eventDate: draft.eventDate,
+    eventTime: draft.eventTime,
+    city: draft.city || DEFAULT_CITY,
+    district: draft.district,
+    address: draft.address,
+    venueType: draft.venueType || 'home',
+    budget: typeof draft.budget === 'number' ? draft.budget : undefined,
+    budgetNegotiable: draft.budgetNegotiable ?? false,
+    childrenCount: draft.childrenCount,
+    childrenAgeRange: draft.childrenAgeRange,
+    birthdayChild: draft.birthdayChild,
+    contactName: draft.contactName,
+    contactPhone: draft.contactPhone,
+    details: draft.details || {},
+  }
+
+  return normalized
+}
+
+export async function POST(request: Request) {
+  try {
+    const body: DraftRequestBody = await request.json()
+    if (!body.text || body.text.trim().length < 10) {
+      return NextResponse.json(
+        { error: 'Опишите, что нужно (минимум 10 символов)' },
+        { status: 400 }
+      )
+    }
+
+    const prompt = buildPrompt(body.text.trim())
+    const result = await aiService.generateText(prompt, {
+      temperature: 0.2,
+      max_tokens: 512,
+    })
+
+    const parsed = safeParseDraft(result)
+    if (!parsed) {
+      return NextResponse.json(
+        { error: 'Не удалось понять запрос. Попробуйте сформулировать подробнее.' },
+        { status: 422 }
+      )
+    }
+
+    const draft = normalizeDraft(parsed)
+    const payload = {
+      ...draft,
+    }
+
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url')
+    const link = `/create-request?prefill=${encoded}`
+
+    return NextResponse.json({
+      draft: payload,
+      link,
+    })
+  } catch (error) {
+    logger.error('[AI Draft] Ошибка обработки запроса', error)
+    return NextResponse.json(
+      { error: 'Не удалось создать черновик. Попробуйте ещё раз.' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

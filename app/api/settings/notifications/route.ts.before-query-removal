@@ -1,0 +1,149 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+/**
+ * GET /api/settings/notifications
+ * Получить настройки уведомлений пользователя
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Получаем настройки
+    const { data: settings, error } = await supabase
+      .from('notification_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // Настроек нет - создаём по умолчанию
+        const { data: newSettings, error: createError } = await supabase
+          .from('notification_settings')
+          .insert({ user_id: userId })
+          .select()
+          .single()
+
+        if (createError) {
+          logger.error('[Notification Settings API] Error creating default settings:', createError)
+          return NextResponse.json(
+            { error: 'Ошибка создания настроек' },
+            { status: 500 }
+          )
+        }
+
+        // Проверяем Telegram подключение из telegram_users
+        const { data: telegramUser } = await supabase
+          .from('telegram_users')
+          .select('telegram_username, is_active')
+          .eq('user_id', userId)
+          .single()
+
+        return NextResponse.json({
+          ...newSettings,
+          telegram_verified: telegramUser?.is_active || false,
+          telegram_username: telegramUser?.telegram_username,
+        })
+      }
+
+      logger.error('[Notification Settings API] Error fetching settings:', error)
+      return NextResponse.json(
+        { error: 'Ошибка получения настроек' },
+        { status: 500 }
+      )
+    }
+
+    // Проверяем Telegram подключение из telegram_users
+    const { data: telegramUser } = await supabase
+      .from('telegram_users')
+      .select('telegram_username, is_active')
+      .eq('user_id', userId)
+      .single()
+
+    return NextResponse.json({
+      ...settings,
+      telegram_verified: telegramUser?.is_active || false,
+      telegram_username: telegramUser?.telegram_username,
+    })
+  } catch (error: any) {
+    logger.error('[Notification Settings API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/settings/notifications
+ * Обновить настройки уведомлений
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+
+    // Убираем поля, которые не должны обновляться через API
+    const { id, user_id, created_at, updated_at, ...settingsToUpdate } = body
+
+    // Обновляем настройки
+    const { data, error } = await supabase
+      .from('notification_settings')
+      .upsert({
+        user_id: userId,
+        ...settingsToUpdate,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[Notification Settings API] Error updating settings:', error)
+      return NextResponse.json(
+        { error: 'Ошибка обновления настроек' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(data)
+  } catch (error: any) {
+    logger.error('[Notification Settings API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

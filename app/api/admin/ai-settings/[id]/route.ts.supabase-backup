@@ -1,0 +1,139 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { aiService } from '@/lib/services/ai-service'
+
+/**
+ * PATCH /api/admin/ai-settings/[id]
+ * Обновить настройку AI или активировать её
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (userError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { provider, model_name, api_key, settings, description, is_active } = body
+
+    // Если активируем эту настройку, деактивируем остальные
+    if (is_active) {
+      await supabase
+        .from('ai_settings')
+        .update({ is_active: false })
+        .neq('id', id)
+      
+      // Сбрасываем кеш в AIService
+      aiService.clearCache()
+    }
+
+    // Обновляем настройку
+    const updateData: any = {}
+    if (provider !== undefined) updateData.provider = provider
+    if (model_name !== undefined) updateData.model_name = model_name
+    if (api_key !== undefined) updateData.api_key = api_key
+    if (settings !== undefined) updateData.settings = settings
+    if (description !== undefined) updateData.description = description
+    if (is_active !== undefined) updateData.is_active = is_active
+
+    const { data: updatedSetting, error } = await supabase
+      .from('ai_settings')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[AI Settings PATCH] Error:', error)
+      return NextResponse.json({ error: 'Failed to update AI setting' }, { status: 500 })
+    }
+
+    return NextResponse.json({ setting: updatedSetting }, { status: 200 })
+  } catch (error: any) {
+    console.error('[AI Settings PATCH] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE /api/admin/ai-settings/[id]
+ * Удалить настройку AI
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (userError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Проверяем, не является ли эта настройка активной
+    const { data: setting, error: fetchError } = await supabase
+      .from('ai_settings')
+      .select('is_active')
+      .eq('id', id)
+      .single()
+
+    if (fetchError) {
+      return NextResponse.json({ error: 'Setting not found' }, { status: 404 })
+    }
+
+    if (setting.is_active) {
+      return NextResponse.json(
+        { error: 'Cannot delete active AI setting. Activate another one first.' },
+        { status: 400 }
+      )
+    }
+
+    // Удаляем настройку
+    const { error } = await supabase
+      .from('ai_settings')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('[AI Settings DELETE] Error:', error)
+      return NextResponse.json({ error: 'Failed to delete AI setting' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true }, { status: 200 })
+  } catch (error: any) {
+    console.error('[AI Settings DELETE] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+

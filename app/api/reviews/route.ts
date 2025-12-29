@@ -1,11 +1,13 @@
-import { createServerClient } from '@/lib/supabase/server'
-import { generateEmbedding } from '@/lib/ai/embeddings'
-import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import { triggerEmbeddingRegeneration } from '@/lib/ai/trigger-embedding-regeneration'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/reviews - Получить список отзывов
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const profile_id = searchParams.get('profile_id')
   const author_id = searchParams.get('author_id')
@@ -17,97 +19,74 @@ export async function GET(request: Request) {
   const offset = parseInt(searchParams.get('offset') || '0')
 
   try {
-    const supabase = await createServerClient()
+    // Фильтры для Prisma
+    const where: any = {}
     
-    let query = supabase
-      .from('reviews')
-      .select(`
-        *,
-        profiles:profile_id (
-          id,
-          slug,
-          display_name,
-          avatar_url
-        ),
-        authors:author_id (
-          id,
-          email,
-          full_name
-        )
-      `)
-      .range(offset, offset + limit - 1)
-
-    // Фильтры
     if (profile_id) {
-      query = query.eq('profile_id', profile_id)
+      where.profile_id = profile_id
     }
     if (author_id) {
-      query = query.eq('author_id', author_id)
+      where.user_id = author_id
     }
-    if (rating_min) {
-      query = query.gte('rating', parseInt(rating_min))
-    }
-    if (rating_max) {
-      query = query.lte('rating', parseInt(rating_max))
+    if (rating_min && rating_max) {
+      where.rating = {
+        gte: parseInt(rating_min),
+        lte: parseInt(rating_max),
+      }
+    } else if (rating_min) {
+      where.rating = { gte: parseInt(rating_min) }
+    } else if (rating_max) {
+      where.rating = { lte: parseInt(rating_max) }
     }
     if (is_approved === 'true') {
-      query = query.eq('is_approved', true)
+      where.is_approved = true
     } else if (is_approved === 'false') {
-      query = query.eq('is_approved', false)
-    }
-
-    // По умолчанию показываем только одобренные и не скрытые
-    if (!author_id) {
-      query = query.eq('is_approved', true).eq('is_hidden', false)
+      where.is_approved = false
     }
 
     // Сортировка
+    let orderBy: any = { created_at: 'desc' }
     switch (sort) {
       case 'recent':
-        query = query.order('created_at', { ascending: false })
+        orderBy = { created_at: 'desc' }
         break
       case 'rating_high':
-        query = query.order('rating', { ascending: false })
+        orderBy = { rating: 'desc' }
         break
       case 'rating_low':
-        query = query.order('rating', { ascending: true })
+        orderBy = { rating: 'asc' }
         break
-      case 'helpful':
-        query = query.order('helpful_count', { ascending: false })
-        break
-      default:
-        query = query.order('created_at', { ascending: false })
     }
 
-    const { data: reviews, error } = await query
-
-    if (error) {
-      console.error('Get reviews error:', error)
-      throw error
-    }
-
-    // Подсчёт общего количества
-    let countQuery = supabase
-      .from('reviews')
-      .select('id', { count: 'exact', head: true })
-
-    if (profile_id) {
-      countQuery = countQuery.eq('profile_id', profile_id)
-    }
-    if (!author_id) {
-      countQuery = countQuery.eq('is_approved', true).eq('is_hidden', false)
-    }
-
-    const { count } = await countQuery
+    // Получаем отзывы с профилями
+    const [reviews, total] = await Promise.all([
+      prisma.reviews.findMany({
+        where,
+        include: {
+          profiles: {
+            select: {
+              id: true,
+              slug: true,
+              display_name: true,
+              cover_photo: true,
+            },
+          },
+        },
+        orderBy,
+        skip: offset,
+        take: limit,
+      }),
+      prisma.reviews.count({ where }),
+    ])
 
     return NextResponse.json({ 
       reviews, 
-      total: count || 0,
+      total,
       limit,
       offset,
     })
   } catch (error: any) {
-    console.error('Get reviews error:', error)
+    logger.error('Get reviews error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to fetch reviews' },
       { status: 500 }
@@ -118,26 +97,18 @@ export async function GET(request: Request) {
 /**
  * POST /api/reviews - Создать новый отзыв
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    
-    // Проверка авторизации
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
     const {
       profile_id,
-      booking_id,
       rating,
       comment,
-      photos,
-      quality_rating,
-      service_rating,
-      value_rating,
     } = body
 
     // Валидация
@@ -156,13 +127,12 @@ export async function POST(request: Request) {
     }
 
     // Проверка что профиль существует
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, user_id')
-      .eq('id', profile_id)
-      .single()
+    const profile = await prisma.profiles.findUnique({
+      where: { id: profile_id },
+      select: { id: true, user_id: true }
+    })
 
-    if (profileError || !profile) {
+    if (!profile) {
       return NextResponse.json(
         { error: 'Profile not found' },
         { status: 404 }
@@ -170,7 +140,7 @@ export async function POST(request: Request) {
     }
 
     // Нельзя оставлять отзыв самому себе
-    if (profile.user_id === user.id) {
+    if (profile.user_id === userId) {
       return NextResponse.json(
         { error: 'Cannot review your own profile' },
         { status: 400 }
@@ -178,12 +148,12 @@ export async function POST(request: Request) {
     }
 
     // Проверка что пользователь ещё не оставлял отзыв на этот профиль
-    const { data: existingReview } = await supabase
-      .from('reviews')
-      .select('id')
-      .eq('profile_id', profile_id)
-      .eq('author_id', user.id)
-      .single()
+    const existingReview = await prisma.reviews.findFirst({
+      where: {
+        profile_id,
+        user_id: userId
+      }
+    })
 
     if (existingReview) {
       return NextResponse.json(
@@ -192,53 +162,37 @@ export async function POST(request: Request) {
       )
     }
 
-    // Генерация embedding для семантического поиска отзывов
-    const reviewText = `${comment} Рейтинг: ${rating}/5`
-    const embedding = await generateEmbedding(reviewText)
-
     // Создание отзыва
-    const { data: review, error: createError } = await supabase
-      .from('reviews')
-      .insert({
+    const review = await prisma.reviews.create({
+      data: {
         profile_id,
-        author_id: user.id,
-        booking_id,
+        user_id: userId,
         rating,
         comment,
-        photos: photos || [],
-        quality_rating,
-        service_rating,
-        value_rating,
-        embedding,
-        is_approved: false, // Требует модерации
-        is_hidden: false,
-        helpful_count: 0,
-      })
-      .select(`
-        *,
-        profiles:profile_id (
-          id,
-          slug,
-          display_name
-        )
-      `)
-      .single()
+      },
+      include: {
+        profiles: {
+          select: {
+            id: true,
+            slug: true,
+            display_name: true,
+          }
+        }
+      }
+    })
 
-    if (createError) {
-      console.error('Create review error:', createError)
-      throw createError
-    }
+    // Обновление рейтинга профиля
+    await updateProfileRating(profile_id)
 
-    // Обновление рейтинга профиля (триггер сделает это автоматически)
-    // Но можем вызвать вручную для немедленного обновления
-    await updateProfileRating(supabase, profile_id)
+    // Триггерим регенерацию embeddings для профиля
+    triggerEmbeddingRegeneration(profile_id)
 
     return NextResponse.json({
       review,
       message: 'Review created successfully. It will be published after moderation.',
     }, { status: 201 })
   } catch (error: any) {
-    console.error('Create review error:', error)
+    logger.error('Create review error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to create review' },
       { status: 500 }
@@ -249,35 +203,32 @@ export async function POST(request: Request) {
 /**
  * Обновление рейтинга профиля на основе отзывов
  */
-async function updateProfileRating(supabase: any, profileId: string) {
+async function updateProfileRating(profileId: string) {
   try {
-    // Получаем все одобренные отзывы профиля
-    const { data: reviews } = await supabase
-      .from('reviews')
-      .select('rating, quality_rating, service_rating, value_rating')
-      .eq('profile_id', profileId)
-      .eq('is_approved', true)
-      .eq('is_hidden', false)
+    const reviews = await prisma.reviews.findMany({
+      where: { profile_id: profileId },
+      select: { rating: true }
+    })
 
     if (!reviews || reviews.length === 0) {
+      await prisma.profiles.update({
+        where: { id: profileId },
+        data: { rating: 0, reviews_count: 0 }
+      })
       return
     }
 
-    // Вычисляем средний рейтинг
-    const totalRating = reviews.reduce((sum: number, r: any) => sum + r.rating, 0)
+    const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0)
     const avgRating = totalRating / reviews.length
 
-    // Обновляем профиль
-    await supabase
-      .from('profiles')
-      .update({
+    await prisma.profiles.update({
+      where: { id: profileId },
+      data: {
         rating: Number(avgRating.toFixed(1)),
         reviews_count: reviews.length,
-      })
-      .eq('id', profileId)
-  } catch (error) {
-    console.error('Update profile rating error:', error)
+      }
+    })
+  } catch (error: any) {
+    logger.error('Update profile rating error:', error)
   }
 }
-
-

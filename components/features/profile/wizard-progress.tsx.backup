@@ -1,0 +1,150 @@
+'use client'
+
+import { Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+interface WizardProgressProps {
+  currentStep: number
+  totalSteps: number
+  stepLabels?: string[]
+  onStepClick?: (step: number) => void // Новый проп для навигации
+}
+
+export function WizardProgress({ currentStep, totalSteps, stepLabels, onStepClick }: WizardProgressProps) {
+  const steps = Array.from({ length: totalSteps }, (_, i) => i + 1)
+
+  const handleStepClick = (step: number) => {
+    // Можно переходить только на уже пройденные или текущий шаг
+    if (step <= currentStep && onStepClick) {
+      onStepClick(step)
+    }
+  }
+
+  return (
+    <div className="w-full py-4 sm:py-6">
+      {/* Мобильная версия - компактная */}
+      <div className="md:hidden">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-muted-foreground">
+            Шаг {currentStep} из {totalSteps}
+          </span>
+          <span className="text-xs font-medium text-primary">
+            {Math.round((currentStep / totalSteps) * 100)}%
+          </span>
+        </div>
+        <div className="w-full bg-muted rounded-full h-1.5">
+          <div
+            className="bg-primary h-1.5 rounded-full transition-all duration-300"
+            style={{ width: `${(currentStep / totalSteps) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Планшетная версия (768-1200px) - только кружки без подписей */}
+      <div className="hidden md:block lg:hidden">
+        <div className="flex items-center justify-between px-4">
+          {steps.map((step, index) => {
+            const isCompleted = step < currentStep
+            const isCurrent = step === currentStep
+            const isLast = index === steps.length - 1
+            const isClickable = step <= currentStep && onStepClick
+
+            return (
+              <div key={step} className="flex items-center flex-1">
+                {/* Кружок шага */}
+                <button
+                  onClick={() => handleStepClick(step)}
+                  disabled={!isClickable}
+                  className={cn(
+                    'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-200',
+                    isCompleted && 'bg-primary text-primary-foreground',
+                    isCurrent && 'bg-primary text-primary-foreground ring-4 ring-primary/20',
+                    !isCompleted && !isCurrent && 'bg-muted text-muted-foreground',
+                    isClickable && 'cursor-pointer hover:ring-2 hover:ring-primary/20',
+                    !isClickable && 'cursor-not-allowed'
+                  )}
+                >
+                  {isCompleted ? (
+                    <Check className="w-4 h-4" />
+                  ) : (
+                    step
+                  )}
+                </button>
+
+                {/* Линия между шагами */}
+                {!isLast && (
+                  <div
+                    className={cn(
+                      'flex-1 h-0.5 mx-2 transition-all duration-200',
+                      isCompleted ? 'bg-primary' : 'bg-muted'
+                    )}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Десктопная версия (>1200px) - полная с подписями */}
+      <div className="hidden lg:block">
+        <div className="flex items-center justify-between">
+          {steps.map((step, index) => {
+            const isCompleted = step < currentStep
+            const isCurrent = step === currentStep
+            const isLast = index === steps.length - 1
+            const isClickable = step <= currentStep && onStepClick
+
+            return (
+              <div key={step} className="flex items-center flex-1">
+                {/* Кружок шага */}
+                <div className="flex flex-col items-center">
+                  <button
+                    onClick={() => handleStepClick(step)}
+                    disabled={!isClickable}
+                    className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-200',
+                      isCompleted && 'bg-primary text-primary-foreground',
+                      isCurrent && 'bg-primary text-primary-foreground ring-4 ring-primary/20',
+                      !isCompleted && !isCurrent && 'bg-muted text-muted-foreground',
+                      isClickable && 'cursor-pointer hover:ring-2 hover:ring-primary/20',
+                      !isClickable && 'cursor-not-allowed'
+                    )}
+                  >
+                    {isCompleted ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      step
+                    )}
+                  </button>
+                  {stepLabels && stepLabels[index] && (
+                    <span
+                      className={cn(
+                        'mt-2 text-xs text-center max-w-[100px] line-clamp-2',
+                        isCurrent ? 'font-medium text-foreground' : 'text-muted-foreground'
+                      )}
+                    >
+                      {stepLabels[index]}
+                    </span>
+                  )}
+                </div>
+
+                {/* Линия между шагами */}
+                {!isLast && (
+                  <div
+                    className={cn(
+                      'flex-1 h-0.5 mx-2 transition-all duration-200',
+                      isCompleted ? 'bg-primary' : 'bg-muted'
+                    )}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+

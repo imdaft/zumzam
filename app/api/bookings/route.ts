@@ -1,80 +1,115 @@
-import { createServerClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/bookings - Получить список бронирований
  */
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const status = searchParams.get('status')
-  const profile_id = searchParams.get('profile_id')
-  const client_id = searchParams.get('client_id')
-  const date_from = searchParams.get('date_from')
-  const date_to = searchParams.get('date_to')
-
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    
-    // Проверка авторизации
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    let query = supabase
-      .from('bookings')
-      .select(`
-        *,
-        services:service_id (
-          id,
-          title,
-          price,
-          duration_minutes,
-          photos
-        ),
-        profiles:profile_id (
-          id,
-          slug,
-          display_name,
-          city,
-          phone,
-          email
-        ),
-        clients:client_id (
-          id,
-          email,
-          full_name
-        )
-      `)
-      .order('created_at', { ascending: false })
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get('status')
+    const profile_id = searchParams.get('profile_id')
+    const client_id = searchParams.get('client_id')
+    const date_from = searchParams.get('date_from')
+    const date_to = searchParams.get('date_to')
+
+    // Проверяем роль пользователя
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    })
+
+    const isAdmin = user?.role === 'admin'
 
     // Фильтры
+    const where: any = {}
+
+    if (!isAdmin) {
+      // Обычный пользователь видит только свои бронирования или бронирования на свои профили
+      const userProfiles = await prisma.profiles.findMany({
+        where: { user_id: userId },
+        select: { id: true }
+      })
+      const profileIds = userProfiles.map(p => p.id)
+
+      where.OR = [
+        { user_id: userId },
+        ...(profileIds.length > 0 ? [{ profile_id: { in: profileIds } }] : [])
+      ]
+    }
+
     if (status) {
-      query = query.eq('status', status)
+      where.status = status
     }
     if (profile_id) {
-      query = query.eq('profile_id', profile_id)
+      where.profile_id = profile_id
     }
     if (client_id) {
-      query = query.eq('client_id', client_id)
+      where.user_id = client_id
     }
     if (date_from) {
-      query = query.gte('event_date', date_from)
+      where.event_date = { ...where.event_date, gte: new Date(date_from) }
     }
     if (date_to) {
-      query = query.lte('event_date', date_to)
+      where.event_date = { ...where.event_date, lte: new Date(date_to) }
     }
 
-    const { data: bookings, error } = await query
+    // Получаем бронирования
+    const bookings = await prisma.bookings.findMany({
+      where,
+      include: {
+        services: {
+          select: {
+            id: true,
+            title: true,
+            price: true,
+            duration_minutes: true,
+            photos: true,
+          }
+        },
+        profiles: {
+          select: {
+            id: true,
+            slug: true,
+            display_name: true,
+            city: true,
+            phone: true,
+            email: true,
+          }
+        },
+        users: {
+          select: {
+            id: true,
+            full_name: true,
+            email: true,
+            phone: true,
+          }
+        }
+      },
+      orderBy: { created_at: 'desc' }
+    })
 
-    if (error) {
-      console.error('Get bookings error:', error)
-      throw error
-    }
-
-    return NextResponse.json({ bookings, total: bookings?.length || 0 })
+    return NextResponse.json({
+      bookings,
+      total: bookings.length
+    })
   } catch (error: any) {
-    console.error('Get bookings error:', error)
+    logger.error('[Bookings API] GET error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to fetch bookings' },
       { status: 500 }
@@ -85,44 +120,52 @@ export async function GET(request: Request) {
 /**
  * POST /api/bookings - Создать новое бронирование
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    
-    // Проверка авторизации
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
     const body = await request.json()
+
     const {
       service_id,
       profile_id,
       event_date,
       event_time,
-      child_age,
-      children_count,
-      event_address,
-      client_message,
+      duration_minutes,
+      total_amount,
+      notes,
     } = body
 
     // Валидация обязательных полей
-    if (!service_id || !profile_id || !event_date || !event_time) {
+    if (!service_id || !profile_id || !event_date) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing required fields: service_id, profile_id, event_date' },
         { status: 400 }
       )
     }
 
     // Проверка что услуга существует и активна
-    const { data: service, error: serviceError } = await supabase
-      .from('services')
-      .select('id, profile_id, active')
-      .eq('id', service_id)
-      .single()
+    const service = await prisma.services.findUnique({
+      where: { id: service_id },
+      select: {
+        id: true,
+        profile_id: true,
+        active: true,
+        title: true,
+        price: true,
+      }
+    })
 
-    if (serviceError || !service) {
+    if (!service) {
       return NextResponse.json(
         { error: 'Service not found' },
         { status: 404 }
@@ -145,55 +188,55 @@ export async function POST(request: Request) {
     }
 
     // Создание бронирования
-    const { data: booking, error: createError } = await supabase
-      .from('bookings')
-      .insert({
+    const booking = await prisma.bookings.create({
+      data: {
         service_id,
         profile_id,
-        client_id: user.id,
-        event_date,
-        event_time,
-        child_age,
-        children_count,
-        event_address,
-        client_message,
+        user_id: userId,
+        event_date: new Date(event_date),
+        event_time: event_time ? new Date(`1970-01-01T${event_time}`) : null,
+        duration_minutes: duration_minutes || service.duration_minutes || null,
+        total_amount: total_amount || service.price ? parseFloat(service.price.toString()) : null,
+        notes,
         status: 'pending',
-      })
-      .select(`
-        *,
-        services:service_id (
-          id,
-          title,
-          price
-        ),
-        profiles:profile_id (
-          id,
-          slug,
-          display_name,
-          phone,
-          email
-        )
-      `)
-      .single()
-
-    if (createError) {
-      console.error('Create booking error:', createError)
-      throw createError
-    }
-
-    // TODO: День 24 - Отправить уведомление студии
+        payment_status: 'unpaid',
+      },
+      include: {
+        services: {
+          select: {
+            id: true,
+            title: true,
+            price: true,
+          }
+        },
+        profiles: {
+          select: {
+            id: true,
+            slug: true,
+            display_name: true,
+            phone: true,
+            email: true,
+          }
+        },
+        users: {
+          select: {
+            id: true,
+            full_name: true,
+            email: true,
+          }
+        }
+      }
+    })
 
     return NextResponse.json({
       booking,
       message: 'Booking created successfully',
     }, { status: 201 })
   } catch (error: any) {
-    console.error('Create booking error:', error)
+    logger.error('[Bookings API] POST error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to create booking' },
       { status: 500 }
     )
   }
 }
-
-

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "miro": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@k-jarzyna/mcp-miro"
+      ],
+      "env": {
+        "MIRO_ACCESS_TOKEN": "eyJtaXJvLm9yaWdpbiI6ImV1MDEifQ_Ravk0Fy8qcQ7BswfkxbS9fYFVIo"
+      }
+    }
+  }
+}
+

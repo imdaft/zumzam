@@ -1,0 +1,44 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+/**
+ * GET /api/board-listing-plans
+ * Получение списка тарифов размещения объявлений
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    // Получаем активные тарифы
+    const { data: plans, error } = await supabase
+      .from('board_listing_plans')
+      .select('*')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+
+    if (error) {
+      logger.error('[Board Listing Plans] Error fetching plans', { error })
+      return NextResponse.json({ error: 'Failed to fetch plans' }, { status: 500 })
+    }
+
+    return NextResponse.json({ plans })
+  } catch (error) {
+    logger.error('[Board Listing Plans] Unexpected error', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+

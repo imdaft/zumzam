@@ -1,0 +1,2164 @@
+{
+  "timestamp": "2025-12-25T21:09:48.822Z",
+  "totalFiles": 171,
+  "categories": {
+    "Критичные (вручную)": [
+      {
+        "path": "2gis-reviews/parse/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "2gis-reviews/[locationId]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/analytics/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "admin/claim-requests/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/profiles/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/reviews/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/reviews/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "advertising/active-banners/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": false,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "advertising/campaigns/[id]/analytics/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "advertising/track/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": false,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "advertising/upload-image/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "agency-partners/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": false,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "agency-partners/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "analytics/interest/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "analytics/provider/breakdowns/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "analytics/provider/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "analytics/source/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "analytics/track/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "animator-characters/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "animator-characters/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "auth/yandex/callback/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": false,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "category-images/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT"
+          ],
+          "warnings": [
+            "⚠️  Авторизация не мигрирована на JWT",
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": false,
+          "hasPrismaQueries": true,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "category-images/upload/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Авторизация не мигрирована на JWT"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "master-class-programs/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "master-class-programs/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "notifications/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "notifications/[id]/read/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "notifications/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "profile-locations/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "profile-locations/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "profiles/by-slug/[slug]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": false,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "profiles/public/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": false,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "profiles/[id]/catalog/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/[id]/cover-crop/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "profiles/[id]/templates/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "quest-programs/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "quest-programs/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "requests/responses/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "requests/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "requests/[id]/respond/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "requests/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "reviews/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "reviews/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "services/reorder/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "services/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "services/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "settings/notifications/email-confirm/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "settings/notifications/email-verify/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "settings/notifications/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "settings/notifications/telegram-disconnect/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "settings/notifications/verify-email/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "show-programs/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "show-programs/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "upload/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "user/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "users/me/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "yandex-reviews/parse/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "yandex-reviews/[locationId]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      }
+    ],
+    "Автоконвертированные": [
+      {
+        "path": "admin/advertising/campaigns/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/ai-settings/providers/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/ai-settings/providers/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/ai-settings/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/ai-settings/tasks/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/ai-settings/tasks/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/ai-settings/test/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/ai-settings/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/cleanup-non-venue-locations/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/debug/profiles/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/errors/export/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/errors/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/errors/stats/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/generate-embeddings/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/moderation/stats/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/pages-status/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/profiles/create-unclaimed/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/profiles/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/stt-settings/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/tests/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/users/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/users/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "admin/verification/pending/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "advertising/bookings/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "advertising/campaigns/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "advertising/campaigns/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "advertising/debug/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "advertising/slots/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "agency-cases/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "ai/chat/history/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "ai/chat/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "ai/expand-category-image/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "ai/expand-image/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "ai/request-draft-chat/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "ai/transcribe/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "auth/verify-password/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "board-listing-plans/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "board-subscriptions/notify/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "board-subscriptions/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "board-subscriptions/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "bookings/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "bookings/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "cart/ai/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "cart/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "cart/validate/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "cart/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "claim/by-token/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "claim/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "errors/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "faq/ask-ai/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "faq/generate-embeddings/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "faq/search/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "faq/seed/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "favorites/count/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "folders/link/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "folders/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "folders/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "generate-legal-docs/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "geography/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "geography/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "legal-questionnaire/[profileId]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "messages/chats/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "messages/reactions/batch/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "messages/[id]/reactions/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "payments/create/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "payments/webhook/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "photography-styles/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "photography-styles/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [
+            "⚠️  Старый паттерн { data, error }"
+          ],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "pipelines/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "pipelines/stages/[stageId]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "pipelines/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "pipelines/[id]/stages/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/by-id/[id]/fields/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/by-id/[id]/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/check/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/me/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/quick-create/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "profiles/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "push/send/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "push/subscribe/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "search/semantic/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "search/suggestions/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "subscriptions/current/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "subscriptions/plans/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "telegram/connect/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "telegram/publish-request/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "telegram/webhook/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "vk-market/import/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "vk-oauth/callback/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase Auth вместо JWT",
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      }
+    ],
+    "Не требуют миграции": [
+      {
+        "path": "admin/errors/notify/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": false,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "ai/edit-text/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "ai/generate-description/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": false,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "ai/generate-scenario/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": false,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "ai/request-draft/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "auth/yandex/route.ts",
+        "analysis": {
+          "issues": [
+            "❌ Использует Supabase queries (.from)"
+          ],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": false
+        }
+      },
+      {
+        "path": "conversations/ensure-for-order/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "conversations/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "conversations/[id]/mark-read/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "conversations/[id]/messages/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "list-models/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": false,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "orders/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "orders/[id]/attachments/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "orders/[id]/messages/read/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "orders/[id]/messages/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "orders/[id]/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "parse-yandex-maps/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": false,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "subscriptions/check-feature/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "subscriptions/check-limit/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "test-gemini/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": false,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "user/counts/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": true,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "user/views/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": true,
+          "hasJWT": true,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      },
+      {
+        "path": "webhooks/profile-updated/route.ts",
+        "analysis": {
+          "issues": [],
+          "warnings": [],
+          "hasPrisma": false,
+          "hasJWT": false,
+          "hasPrismaQueries": false,
+          "isMigrated": true
+        }
+      }
+    ]
+  },
+  "totalIssues": 122,
+  "totalWarnings": 18,
+  "summary": {
+    "critical": "36/59",
+    "auto": "7/89",
+    "skip": 23
+  }
+}

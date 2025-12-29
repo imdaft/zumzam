@@ -1,260 +1,130 @@
 'use client'
 
-import { 
-  MapPin, 
-  Star, 
-  Phone, 
-  Mail, 
-  Globe, 
-  CheckCircle2,
-  DollarSign,
-  Clock,
-  Users,
-} from 'lucide-react'
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { Star, MapPin, Clock, Users, Award } from 'lucide-react'
+import Image from 'next/image'
+import { Profile } from '@/lib/types/profile'
 import { Badge } from '@/components/ui/badge'
-import type { Profile } from '@/types'
-
-interface ProfileHeaderProps {
-  profile: Profile
-}
 
 /**
- * Шапка профиля студии/аниматора
+ * Герой-секция профиля (О нас)
+ * Показывает основную информацию, рейтинг, быстрые данные
  */
-export function ProfileHeader({ profile }: ProfileHeaderProps) {
-  // Генерируем массив звёзд для рейтинга
-  const renderStars = (rating: number) => {
-    return Array.from({ length: 5 }, (_, i) => (
-      <Star
-        key={i}
-        className={`h-5 w-5 ${
-          i < Math.floor(rating)
-            ? 'fill-yellow-400 text-yellow-400'
-            : 'text-gray-300'
-        }`}
-      />
-    ))
-  }
-
-  // Ценовой диапазон в рублях
-  const getPriceRangeText = (range: string | null) => {
-    switch (range) {
-      case '$':
-        return 'до 5 000₽'
-      case '$$':
-        return '5 000 - 15 000₽'
-      case '$$$':
-        return 'от 15 000₽'
-      default:
-        return 'По запросу'
-    }
-  }
-
+export function ProfileHeader({
+  profile,
+  isOwner = false,
+}: {
+  profile: Profile
+  isOwner?: boolean
+}) {
   return (
-    <div className="relative">
-      {/* Обложка */}
-      <div className="h-64 w-full overflow-hidden rounded-t-xl bg-gradient-to-r from-orange-400 to-pink-500">
-        {profile.cover_photo ? (
-          <img
+    <div className="bg-white rounded-[32px] overflow-hidden shadow-sm border border-slate-100">
+      {/* Cover / Main photo */}
+      {profile.cover_photo && (
+        <div className="relative h-48 md:h-64 bg-gradient-to-br from-orange-100 to-orange-50">
+          <Image
             src={profile.cover_photo}
             alt={profile.display_name}
-            className="h-full w-full object-cover"
+            fill
+            className="object-cover"
           />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center text-white">
-              <div className="text-6xl mb-2">🚀</div>
-              <p className="text-xl font-semibold">{profile.display_name}</p>
+        </div>
+      )}
+      
+      <div className="p-6 md:p-8">
+        {/* Title */}
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="min-w-0">
+            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">
+              {profile.display_name}
+            </h1>
+            {profile.bio && (
+              <p className="text-lg text-slate-600">{profile.bio}</p>
+            )}
+          </div>
+          
+          {/* Rating */}
+          {profile.rating && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-full shrink-0">
+              <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+              <span className="font-bold text-lg text-amber-700">{profile.rating.toFixed(1)}</span>
             </div>
+          )}
+        </div>
+        
+        {/* Quick info badges */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {/* Адрес */}
+          {profile.address && (
+            <Badge variant="secondary" className="gap-1.5">
+              <MapPin className="w-4 h-4" />
+              {profile.address}
+            </Badge>
+          )}
+          
+          {/* Метро */}
+          {profile.metro_stations && profile.metro_stations.length > 0 && (
+            <Badge variant="secondary" className="gap-1.5">
+              🚇 {profile.metro_stations[0].name} ({profile.metro_stations[0].walk_time_minutes} мин)
+            </Badge>
+          )}
+          
+          {/* Время работы */}
+          {profile.working_hours?.format === '24/7' && (
+            <Badge variant="secondary" className="gap-1.5">
+              <Clock className="w-4 h-4" />
+              Круглосуточно
+            </Badge>
+          )}
+          
+          {/* Возраст */}
+          {profile.age_restrictions?.min_age && (
+            <Badge variant="secondary" className="gap-1.5">
+              <Users className="w-4 h-4" />
+              От {profile.age_restrictions.min_age} лет
+            </Badge>
+          )}
+          
+          {/* Вместимость */}
+          {profile.capacity_info?.max_children && (
+            <Badge variant="secondary" className="gap-1.5">
+              👥 До {profile.capacity_info.max_children} детей
+            </Badge>
+          )}
+          
+          {/* Verified */}
+          {profile.verified && (
+            <Badge className="gap-1.5 bg-blue-600">
+              <Award className="w-4 h-4" />
+              Проверено
+            </Badge>
+          )}
+        </div>
+        
+        {/* Description */}
+        {profile.description && (
+          <div className="prose prose-slate max-w-none">
+            <p className="text-slate-700 leading-relaxed">{profile.description}</p>
           </div>
         )}
-      </div>
-
-      {/* Основная информация */}
-      <div className="rounded-b-xl border border-t-0 bg-white dark:bg-slate-800 p-6">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          {/* Левая колонка */}
-          <div className="flex-1">
-            {/* Название и бейджи */}
-            <div className="mb-4">
-              <div className="flex items-start gap-3">
-                <h1 className="text-3xl font-bold">{profile.display_name}</h1>
-                {profile.verified && (
-                  <div className="flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-200">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Проверено
-                  </div>
-                )}
-              </div>
-              {profile.bio && (
-                <p className="mt-2 text-lg text-muted-foreground">
-                  {profile.bio}
-                </p>
-              )}
-            </div>
-
-            {/* Метрики */}
-            <div className="mb-4 flex flex-wrap items-center gap-4">
-              {/* Рейтинг */}
-              <div className="flex items-center gap-2">
-                <div className="flex">{renderStars(profile.rating || 0)}</div>
-                <span className="text-lg font-semibold">
-                  {profile.rating?.toFixed(1) || '0.0'}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  ({profile.reviews_count || 0} отзывов)
-                </span>
-              </div>
-
-              {/* Мероприятий проведено */}
-              {profile.bookings_completed && profile.bookings_completed > 0 && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Users className="h-5 w-5" />
-                  <span>{profile.bookings_completed} мероприятий</span>
-                </div>
-              )}
-
-              {/* Время ответа */}
-              {profile.response_time_minutes && profile.response_time_minutes < 60 && (
-                <div className="flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900 dark:text-green-200">
-                  <Clock className="h-4 w-4" />
-                  Быстрый ответ
-                </div>
-              )}
-            </div>
-
-            {/* Локация */}
-            <div className="mb-4 flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-5 w-5" />
-              <span>{profile.city}</span>
-              {profile.address && <span>• {profile.address}</span>}
-            </div>
-
-            {/* Ценовой диапазон */}
-            {profile.price_range && (
-              <div className="mb-4 flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-muted-foreground" />
-                <span className="text-lg font-medium">
-                  {getPriceRangeText(profile.price_range)}
-                </span>
+        
+        {/* Stats */}
+        {(profile.reviews_count || profile.bookings_completed) && (
+          <div className="flex flex-wrap gap-6 mt-6 pt-6 border-t border-slate-100">
+            {profile.reviews_count > 0 && (
+              <div>
+                <div className="text-2xl font-bold text-slate-900">{profile.reviews_count}</div>
+                <div className="text-sm text-slate-500">отзывов</div>
               </div>
             )}
-
-            {/* Теги */}
-            {profile.tags && profile.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {profile.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary">
-                    {tag}
-                  </Badge>
-                ))}
+            {profile.bookings_completed > 0 && (
+              <div>
+                <div className="text-2xl font-bold text-slate-900">{profile.bookings_completed}</div>
+                <div className="text-sm text-slate-500">праздников</div>
               </div>
             )}
           </div>
-
-          {/* Правая колонка - Контакты и действия */}
-          <div className="w-full lg:w-80">
-            <div className="rounded-lg border bg-slate-50 p-6 dark:bg-slate-900">
-              <h3 className="mb-4 text-lg font-semibold">Свяжитесь с нами</h3>
-              
-              {/* Кнопка бронирования */}
-              <Button className="mb-4 w-full" size="lg">
-                Забронировать
-              </Button>
-
-              {/* Контакты */}
-              <div className="space-y-3">
-                {profile.phone && (
-                  <a
-                    href={`tel:${profile.phone}`}
-                    className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Phone className="h-4 w-4" />
-                    {profile.phone}
-                  </a>
-                )}
-                {profile.email && (
-                  <a
-                    href={`mailto:${profile.email}`}
-                    className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Mail className="h-4 w-4" />
-                    {profile.email}
-                  </a>
-                )}
-                {profile.website && (
-                  <a
-                    href={profile.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Globe className="h-4 w-4" />
-                    Сайт
-                  </a>
-                )}
-              </div>
-
-              {/* Социальные сети */}
-              {profile.social_links && Object.keys(profile.social_links).length > 0 && (
-                <div className="mt-4 pt-4 border-t">
-                  <p className="mb-2 text-sm font-medium">Мы в соцсетях:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {profile.social_links.vk && (
-                      <Link
-                        href={profile.social_links.vk as string}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
-                      >
-                        VK
-                      </Link>
-                    )}
-                    {profile.social_links.instagram && (
-                      <Link
-                        href={profile.social_links.instagram as string}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1 text-xs font-medium text-white"
-                      >
-                        Instagram
-                      </Link>
-                    )}
-                    {profile.social_links.telegram && (
-                      <Link
-                        href={
-                          (profile.social_links.telegram as string).startsWith('http')
-                            ? (profile.social_links.telegram as string)
-                            : `https://t.me/${(profile.social_links.telegram as string).replace('@', '')}`
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-full bg-blue-500 px-3 py-1 text-xs font-medium text-white hover:bg-blue-600"
-                      >
-                        Telegram
-                      </Link>
-                    )}
-                    {profile.social_links.youtube && (
-                      <Link
-                        href={profile.social_links.youtube as string}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-full bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
-                      >
-                        YouTube
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )
 }
-
-

@@ -4,11 +4,9 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
-import { Sparkles, Loader2, Download, Share2 } from 'lucide-react'
+import { Sparkles, Loader2, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Card,
   CardContent,
@@ -160,16 +158,18 @@ ${i + 1}. ${game.name} (${game.duration} мин)
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 sm:space-y-6">
       {/* Форма */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            Генератор сценариев праздников
+      <Card className="rounded-[24px] border border-gray-100 bg-white shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-gray-900">
+            <span className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center">
+              <Sparkles className="h-5 w-5 text-blue-600" />
+            </span>
+            Генератор сценариев
           </CardTitle>
-          <CardDescription>
-            Создайте уникальный сценарий детского праздника с помощью AI
+          <CardDescription className="text-gray-600">
+            Подберём игры, тайминг и советы — под возраст и тему
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -186,6 +186,7 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                         <Input 
                           placeholder="Супергерои, принцессы, космос..." 
                           {...field} 
+                          className="h-11 rounded-[18px] border-gray-200"
                         />
                       </FormControl>
                       <FormMessage />
@@ -200,7 +201,17 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                     <FormItem>
                       <FormLabel>Возраст ребёнка *</FormLabel>
                       <FormControl>
-                        <Input type="number" min="1" max="18" {...field} />
+                        <Input 
+                          type="number" 
+                          min="1" 
+                          max="18" 
+                          value={field.value ?? ''}
+                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                          className="h-11 rounded-[18px] border-gray-200" 
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -214,7 +225,17 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                     <FormItem>
                       <FormLabel>Длительность (минут) *</FormLabel>
                       <FormControl>
-                        <Input type="number" min="30" max="360" {...field} />
+                        <Input 
+                          type="number" 
+                          min="30" 
+                          max="360" 
+                          value={field.value ?? ''}
+                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                          className="h-11 rounded-[18px] border-gray-200" 
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -228,7 +249,17 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                     <FormItem>
                       <FormLabel>Количество гостей</FormLabel>
                       <FormControl>
-                        <Input type="number" min="1" max="100" {...field} />
+                        <Input 
+                          type="number" 
+                          min="1" 
+                          max="100" 
+                          value={field.value ?? ''}
+                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                          className="h-11 rounded-[18px] border-gray-200" 
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -244,7 +275,7 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                       <FormControl>
                         <select
                           {...field}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="flex h-11 w-full rounded-[18px] border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-100"
                         >
                           <option value="помещение">Помещение</option>
                           <option value="улица">Улица</option>
@@ -259,11 +290,21 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                 <FormField
                   control={form.control}
                   name="budget"
-                  render={({ field }) => (
+                  render=({({ field }) => (
                     <FormItem>
                       <FormLabel>Бюджет (₽)</FormLabel>
                       <FormControl>
-                        <Input type="number" min="0" placeholder="Необязательно" {...field} />
+                        <Input 
+                          type="number" 
+                          min="0" 
+                          placeholder="Необязательно" 
+                          value={field.value ?? ''}
+                          onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                          className="h-11 rounded-[18px] border-gray-200" 
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -281,6 +322,7 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                       <Input 
                         placeholder="Например: динозавры, рисование, спорт" 
                         {...field} 
+                        className="h-11 rounded-[18px] border-gray-200"
                       />
                     </FormControl>
                     <FormMessage />
@@ -288,7 +330,12 @@ ${i + 1}. ${game.name} (${game.duration} мин)
                 )}
               />
 
-              <Button type="submit" disabled={isGenerating} size="lg" className="w-full">
+              <Button
+                type="submit"
+                disabled={isGenerating}
+                size="lg"
+                className="w-full rounded-full bg-blue-600 hover:bg-blue-700"
+              >
                 {isGenerating ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -308,17 +355,17 @@ ${i + 1}. ${game.name} (${game.duration} мин)
 
       {/* Результат */}
       {scenario && (
-        <Card>
-          <CardHeader>
+        <Card className="rounded-[24px] border border-gray-100 bg-white shadow-sm">
+          <CardHeader className="pb-3">
             <div className="flex items-start justify-between">
               <div>
-                <CardTitle className="text-3xl mb-2">{scenario.title}</CardTitle>
-                <CardDescription className="text-base">
+                <CardTitle className="text-2xl sm:text-3xl mb-2 text-gray-900">{scenario.title}</CardTitle>
+                <CardDescription className="text-base text-gray-600">
                   {scenario.description}
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={handleDownload}>
+                <Button size="sm" variant="outline" onClick={handleDownload} className="rounded-full">
                   <Download className="mr-2 h-4 w-4" />
                   Скачать
                 </Button>
@@ -328,34 +375,34 @@ ${i + 1}. ${game.name} (${game.duration} мин)
           <CardContent className="space-y-8">
             {/* Подготовка */}
             <div>
-              <h3 className="text-xl font-semibold mb-4">📋 Подготовка</h3>
-              <div className="grid gap-6 md:grid-cols-3">
-                <div>
-                  <h4 className="font-semibold mb-2">Реквизит</h4>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">📋 Подготовка</h3>
+              <div className="grid gap-3 sm:gap-4 md:grid-cols-3">
+                <div className="rounded-[24px] border border-gray-100 bg-[#F7F8FA] p-4">
+                  <h4 className="font-bold text-gray-900 mb-2">Реквизит</h4>
                   <ul className="space-y-1">
                     {scenario.preparation.props.map((prop, i) => (
-                      <li key={i} className="text-sm text-muted-foreground">
+                      <li key={i} className="text-sm text-gray-600">
                         • {prop}
                       </li>
                     ))}
                   </ul>
                 </div>
-                <div>
-                  <h4 className="font-semibold mb-2">Украшения</h4>
+                <div className="rounded-[24px] border border-gray-100 bg-[#F7F8FA] p-4">
+                  <h4 className="font-bold text-gray-900 mb-2">Украшения</h4>
                   <ul className="space-y-1">
                     {scenario.preparation.decorations.map((deco, i) => (
-                      <li key={i} className="text-sm text-muted-foreground">
+                      <li key={i} className="text-sm text-gray-600">
                         • {deco}
                       </li>
                     ))}
                   </ul>
                 </div>
                 {scenario.preparation.costumes.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-2">Костюмы</h4>
+                  <div className="rounded-[24px] border border-gray-100 bg-[#F7F8FA] p-4">
+                    <h4 className="font-bold text-gray-900 mb-2">Костюмы</h4>
                     <ul className="space-y-1">
                       {scenario.preparation.costumes.map((costume, i) => (
-                        <li key={i} className="text-sm text-muted-foreground">
+                        <li key={i} className="text-sm text-gray-600">
                           • {costume}
                         </li>
                       ))}
@@ -367,28 +414,28 @@ ${i + 1}. ${game.name} (${game.duration} мин)
 
             {/* Сценарий */}
             <div>
-              <h3 className="text-xl font-semibold mb-4">🎭 Сценарий</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">🎭 Сценарий</h3>
               <div className="space-y-4">
                 {scenario.timeline.map((activity, i) => (
-                  <Card key={i}>
+                  <Card key={i} className="rounded-[24px] border border-gray-100 bg-[#F7F8FA]">
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <Badge variant="outline" className="mb-2">
+                          <Badge className="mb-2 rounded-full bg-blue-100 text-blue-700 px-2">
                             {activity.duration} мин
                           </Badge>
-                          <CardTitle className="text-lg">{activity.name}</CardTitle>
+                          <CardTitle className="text-lg font-bold text-gray-900">{activity.name}</CardTitle>
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground mb-2">
+                      <p className="text-sm text-gray-700 mb-2">
                         {activity.description}
                       </p>
                       {activity.props.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
                           {activity.props.map((prop, j) => (
-                            <Badge key={j} variant="secondary" className="text-xs">
+                            <Badge key={j} className="text-xs rounded-full bg-white text-gray-700 border border-gray-200 px-2">
                               {prop}
                             </Badge>
                           ))}
@@ -402,12 +449,12 @@ ${i + 1}. ${game.name} (${game.duration} мин)
 
             {/* Советы */}
             <div>
-              <h3 className="text-xl font-semibold mb-4">💡 Советы ведущему</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">💡 Советы ведущему</h3>
               <ul className="space-y-2">
                 {scenario.hostTips.map((tip, i) => (
                   <li key={i} className="flex items-start gap-2">
-                    <span className="text-primary font-semibold">{i + 1}.</span>
-                    <span className="text-sm">{tip}</span>
+                    <span className="text-blue-600 font-bold">{i + 1}.</span>
+                    <span className="text-sm text-gray-800">{tip}</span>
                   </li>
                 ))}
               </ul>
@@ -415,18 +462,18 @@ ${i + 1}. ${game.name} (${game.duration} мин)
 
             {/* Запасные игры */}
             <div>
-              <h3 className="text-xl font-semibold mb-4">🎲 Запасные игры</h3>
-              <div className="grid gap-4 md:grid-cols-2">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">🎲 Запасные игры</h3>
+              <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
                 {scenario.backupGames.map((game, i) => (
-                  <Card key={i}>
+                  <Card key={i} className="rounded-[24px] border border-gray-100 bg-[#F7F8FA]">
                     <CardHeader className="pb-2">
-                      <Badge variant="outline" className="w-fit mb-2">
+                      <Badge className="w-fit mb-2 rounded-full bg-blue-100 text-blue-700 px-2">
                         {game.duration} мин
                       </Badge>
-                      <CardTitle className="text-base">{game.name}</CardTitle>
+                      <CardTitle className="text-base font-bold text-gray-900">{game.name}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-gray-700">
                         {game.description}
                       </p>
                     </CardContent>

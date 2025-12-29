@@ -1,0 +1,115 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+import { NextResponse } from 'next/server'
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const profileId = searchParams.get('profileId')
+
+    if (!profileId) {
+      return NextResponse.json(
+        { error: 'Profile ID is required' },
+        { status: 400 }
+      )
+    }
+
+    // Supabase client removed
+
+    // Получаем все районы для профиля
+    const { data: areas, error } = await supabase
+      .from('work_geography')
+      .select('*')
+      .eq('profile_id', profileId)
+      .order('area_name', { ascending: true })
+
+    if (error) throw error
+
+    return NextResponse.json({ areas })
+  } catch (error: any) {
+    logger.error('Error fetching geography:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch geography' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    // Supabase client removed
+
+    // Проверка авторизации
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { profile_id, area_name, price_modifier, travel_time } = body
+
+    if (!profile_id || !area_name) {
+      return NextResponse.json(
+        { error: 'Profile ID and area name are required' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, что пользователь - владелец профиля
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('id', profile_id)
+      .single()
+
+    const isAdmin = (await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()).data?.role === 'admin'
+
+    if (!profile || (profile.user_id !== userId && !isAdmin)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const dbClient = isAdmin ? createAdminClient() : supabase
+
+    // Создаем район
+    const { data: area, error } = await dbClient
+      .from('work_geography')
+      .insert({
+        profile_id,
+        area_name,
+        price_modifier: price_modifier || 0,
+        travel_time: travel_time || null,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return NextResponse.json({ area })
+  } catch (error: any) {
+    logger.error('Error creating area:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to create area' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+

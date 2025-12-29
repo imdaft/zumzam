@@ -1,0 +1,118 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/messages/chats
+ * Получение списка чатов с превью последнего сообщения
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    // Получаем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const userRole = userData?.role || 'client'
+
+    // Получаем заказы пользователя
+    let ordersQuery = supabase
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        client_name,
+        provider_id,
+        client_id,
+        order_messages(
+          id,
+          message,
+          sender_role,
+          is_read,
+          created_at
+        )
+      `)
+      .order('updated_at', { ascending: false })
+
+    // Фильтруем по роли
+    if (userRole === 'provider') {
+      ordersQuery = ordersQuery.eq('provider_id', userId)
+    } else {
+      ordersQuery = ordersQuery.eq('client_id', userId)
+    }
+
+    const { data: orders, error } = await ordersQuery
+
+    if (error) {
+      console.error('[Messages API] Error fetching chats:', error)
+      return NextResponse.json(
+        { error: 'Ошибка загрузки чатов', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    // Формируем список чатов с превью
+    const chats = (orders || [])
+      .filter((order: any) => order.order_messages && order.order_messages.length > 0)
+      .map((order: any) => {
+        const messages = order.order_messages || []
+        const sortedMessages = messages.sort((a: any, b: any) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+        const lastMessage = sortedMessages[0]
+        
+        // Подсчитываем непрочитанные сообщения (от другого пользователя)
+        // Если я клиент - считаем сообщения от провайдера
+        // Если я провайдер - считаем сообщения от клиента
+        const myRole = userRole === 'provider' ? 'provider' : 'client'
+        const unreadCount = messages.filter((msg: any) => 
+          !msg.is_read && msg.sender_role !== myRole
+        ).length
+
+        return {
+          id: order.id,
+          order_id: order.id,
+          order_number: order.order_number,
+          client_name: order.client_name,
+          last_message: lastMessage.message,
+          last_message_at: lastMessage.created_at,
+          unread_count: unreadCount
+        }
+      })
+
+    return NextResponse.json({ chats })
+  } catch (error: any) {
+    console.error('[Messages API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера', details: error?.message },
+      { status: 500 }
+    )
+  }
+}
+
+

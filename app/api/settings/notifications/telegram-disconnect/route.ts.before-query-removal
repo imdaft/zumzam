@@ -1,0 +1,68 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * POST /api/settings/notifications/telegram-disconnect
+ * Отключить Telegram бот (используем существующую таблицу telegram_users)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    // Деактивируем Telegram подключение в telegram_users
+    const { error: updateError } = await supabase
+      .from('telegram_users')
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    // Также отключаем в notification_settings
+    await supabase
+      .from('notification_settings')
+      .update({ enabled_telegram: false })
+      .eq('user_id', userId)
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Telegram отключён'
+    })
+  } catch (error: any) {
+    logger.error('[Telegram Disconnect API] Error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

@@ -1,0 +1,137 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * GET /api/admin/users
+ * Получить список всех пользователей с фильтрацией
+ */
+export async function GET(request: Request) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userRoleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userRoleError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Получаем параметры фильтрации
+    const { searchParams } = new URL(request.url)
+    const role = searchParams.get('role') // client, provider, admin
+    const search = searchParams.get('search') // поиск по email
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '20')
+    const offset = (page - 1) * limit
+
+    // Строим запрос
+    let query = supabase
+      .from('users')
+      .select(`
+        id,
+        email,
+        role,
+        first_name,
+        last_name,
+        phone,
+        city,
+        created_at,
+        updated_at
+      `, { count: 'exact' })
+
+    // Фильтр по роли
+    if (role && ['client', 'provider', 'admin'].includes(role)) {
+      query = query.eq('role', role)
+    }
+
+    // Поиск по email
+    if (search && search.trim()) {
+      query = query.ilike('email', `%${search.trim()}%`)
+    }
+
+    // Сортировка и пагинация
+    query = query
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    const { data: users, error, count } = await query
+
+    if (error) {
+      console.error('Error fetching users:', error)
+      return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    }
+
+    // Загружаем профили для пользователей
+    if (users && users.length > 0) {
+      const userIds = users.map(u => u.id)
+      console.log('[Admin Users] Fetching profiles for users:', userIds)
+      
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, user_id, display_name, slug, logo, phone, email')
+        .in('user_id', userIds)
+
+      if (profilesError) {
+        console.error('[Admin Users] Error fetching profiles:', profilesError)
+      } else {
+        console.log('[Admin Users] Found profiles:', profiles?.length, 'for', userIds.length, 'users')
+      }
+
+      // Присоединяем профили к пользователям
+      const usersWithProfiles = users.map(user => ({
+        ...user,
+        profiles: profiles?.filter(p => p.user_id === userId) || []
+      }))
+
+      console.log('[Admin Users] Users with profiles:', usersWithProfiles.map(u => ({ id: u.id, profileCount: u.profiles.length })))
+
+      return NextResponse.json({
+        users: usersWithProfiles,
+        pagination: {
+          page,
+          limit,
+          total: count || 0,
+          totalPages: Math.ceil((count || 0) / limit),
+        },
+      })
+    }
+
+    return NextResponse.json({
+      users: users || [],
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+      },
+    })
+  } catch (error: any) {
+    console.error('Admin users GET error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+

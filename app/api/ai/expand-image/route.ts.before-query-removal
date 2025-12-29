@@ -1,0 +1,354 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+/**
+ * API endpoint для AI расширения изображений
+ * POST /api/ai/expand-image
+ * 
+ * Использует Gemini 2.5 Flash Image (Nano Banana) для outpainting изображений
+ * Стоимость: 10 кредитов за одно расширение
+ * 
+ * Документация: https://ai.google.dev/gemini-api/docs/image-generation
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { randomUUID } from 'crypto'
+
+// Стоимость в кредитах
+const EXPAND_COST = 10
+const GEMINI_IMAGE_FAILURE_PREFIX = 'GEMINI_IMAGE_FAILURE:'
+
+export async function POST(request: NextRequest) {
+  const requestId = randomUUID()
+  try {
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    // Получаем данные
+    const body = await request.json()
+    const { profileId, imageUrl, direction, templateId, expandPercent = 40 } = body
+
+    if (!profileId || !imageUrl || !direction) {
+      return NextResponse.json(
+        { error: 'Необходимо указать profileId, imageUrl и direction' },
+        { status: 400 }
+      )
+    }
+    
+    logger.info(`[${requestId}] AI expand request: direction=${direction}, percent=${expandPercent}%`)
+
+    // Проверяем права доступа к профилю
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id, cover_photo_ai_expanded')
+      .eq('id', profileId)
+      .single()
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: 'Профиль не найден' },
+        { status: 404 }
+      )
+    }
+
+    if (profile.user_id !== userId) {
+      return NextResponse.json(
+        { error: 'Нет прав для изменения этого профиля' },
+        { status: 403 }
+      )
+    }
+
+    // Проверяем баланс кредитов пользователя
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('credits, role')
+      .eq('id', userId)
+      .single()
+
+    if (userError || !userData) {
+      return NextResponse.json(
+        { error: 'Не удалось получить данные пользователя' },
+        { status: 500 }
+      )
+    }
+
+    // Админы имеют безлимитные кредиты
+    const isAdmin = userData.role === 'admin'
+    
+    if (!isAdmin && (userData.credits || 0) < EXPAND_COST) {
+      return NextResponse.json(
+        { error: `Недостаточно кредитов. Требуется: ${EXPAND_COST}, доступно: ${userData.credits || 0}` },
+        { status: 402 } // Payment Required
+      )
+    }
+
+    // Получаем API ключ Gemini
+    const geminiApiKey = process.env.GEMINI_API_KEY
+    if (!geminiApiKey) {
+      logger.error('GEMINI_API_KEY не настроен')
+      return NextResponse.json(
+        { error: 'AI сервис временно недоступен', requestId },
+        { status: 503 }
+      )
+    }
+
+    // Инициализируем Gemini с моделью генерации изображений
+    const genAI = new GoogleGenerativeAI(geminiApiKey)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash-image',
+      generationConfig: {
+        responseModalities: ['IMAGE', 'TEXT'],
+      },
+    } as any)
+
+    // Загружаем исходное изображение
+    const imageResponse = await fetch(imageUrl, { cache: 'no-store' })
+    if (!imageResponse.ok) {
+      throw new Error('Не удалось загрузить исходное изображение')
+    }
+    
+    const imageBuffer = await imageResponse.arrayBuffer()
+    const imageBase64 = Buffer.from(imageBuffer).toString('base64')
+    const imageMimeType = imageResponse.headers.get('content-type') || 'image/jpeg'
+
+    // Создаем промпт для расширения в нужном направлении
+    const percent1 = Number.isFinite(expandPercent) ? Math.max(5, Math.min(60, expandPercent)) : 40
+    const percent2 = Math.min(30, percent1)
+    const percent3 = Math.min(20, percent2)
+
+    const prompt = getExpansionPrompt(direction, templateId, percent1)
+    const fallbackPrompt2 = getFallbackExpansionPrompt(direction, percent2)
+    const fallbackPrompt3 = getFallbackExpansionPrompt(direction, percent3)
+
+    logger.info(`[${requestId}] Начинаем AI расширение изображения: ${direction} на ${percent1}% для профиля ${profileId}`)
+
+    // Генерируем расширенное изображение через Gemini Image API
+    // Передаем исходное изображение + текстовый промпт для редактирования
+    const attemptGenerate = async (attemptLabel: string, percent: number, promptText: string) => {
+      logger.info(`[${requestId}] Gemini attempt=${attemptLabel} direction=${direction} percent=${percent}`)
+
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            data: imageBase64,
+            mimeType: imageMimeType,
+          },
+        },
+        { text: promptText },
+      ])
+
+      const response = result.response
+      const finishReason = response.candidates?.[0]?.finishReason
+      const finishMessage = (response.candidates?.[0] as any)?.finishMessage
+
+      logger.info(`[${requestId}] Gemini response received`, {
+        attempt: attemptLabel,
+        finishReason,
+        hasCandidates: !!response.candidates,
+        candidatesLength: response.candidates?.length,
+      })
+
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData?.data) {
+          return { imageBase64: part.inlineData.data, response }
+        }
+      }
+
+      logger.error(`[${requestId}] No image in Gemini response`, {
+        attempt: attemptLabel,
+        finishReason,
+        finishMessage,
+        safetyRatings: response.candidates?.[0]?.safetyRatings,
+        promptFeedback: (response as any).promptFeedback,
+        fullResponse: JSON.stringify(response, null, 2),
+      })
+
+      return { imageBase64: null as string | null, response }
+    }
+
+    const a1 = await attemptGenerate('primary', percent1, prompt)
+    let generatedImageBase64: string | null = a1.imageBase64
+    let lastResponse = a1.response
+
+    if (!generatedImageBase64 && percent2 !== percent1) {
+      const a2 = await attemptGenerate('fallback-1', percent2, fallbackPrompt2)
+      generatedImageBase64 = a2.imageBase64
+      lastResponse = a2.response
+    }
+
+    if (!generatedImageBase64 && percent3 !== percent2) {
+      const a3 = await attemptGenerate('fallback-2', percent3, fallbackPrompt3)
+      generatedImageBase64 = a3.imageBase64
+      lastResponse = a3.response
+    }
+
+    if (!generatedImageBase64) {
+      const finishReason = lastResponse?.candidates?.[0]?.finishReason
+      const finishMessage = (lastResponse?.candidates?.[0] as any)?.finishMessage
+      throw new Error(
+        `${GEMINI_IMAGE_FAILURE_PREFIX}Gemini не вернул изображение (finishReason=${finishReason}). ${finishMessage ? `message=${finishMessage}. ` : ''}requestId=${requestId}`
+      )
+    }
+
+    // Преобразуем base64 в Buffer для загрузки в Supabase
+    const generatedImageBuffer = Buffer.from(generatedImageBase64, 'base64')
+
+    // Загружаем в Supabase Storage
+    const fileName = `${profileId}/cover-expanded-${direction}-${Date.now()}.png`
+    const { data: uploadData, error: uploadError } = await supabase
+      .storage
+      .from('profile-images')
+      .upload(fileName, generatedImageBuffer, {
+        contentType: 'image/png',
+        upsert: false,
+      })
+
+    if (uploadError) {
+      throw new Error(`Ошибка загрузки изображения: ${uploadError.message}`)
+    }
+
+    // Получаем публичный URL загруженного изображения
+    const { data: urlData } = supabase
+      .storage
+      .from('profile-images')
+      .getPublicUrl(fileName)
+
+    const expandedImageUrl = urlData.publicUrl
+
+    // Списываем кредиты (только если не админ)
+    if (!isAdmin) {
+      const newBalance = (userData.credits || 0) - EXPAND_COST
+      await supabase
+        .from('users')
+        .update({ credits: newBalance })
+        .eq('id', userId)
+
+      // Логируем транзакцию
+      await supabase
+        .from('credit_transactions')
+        .insert({
+          user_id: userId,
+          amount: -EXPAND_COST,
+          balance_after: newBalance,
+          type: 'spend',
+          description: `AI расширение изображения (${direction})`,
+          metadata: { profileId, direction, templateId, fileName },
+        })
+    }
+
+    // Сохраняем URL расширенного изображения в профиле
+    const aiExpanded = profile.cover_photo_ai_expanded || {}
+    aiExpanded[direction] = expandedImageUrl
+
+    await supabase
+      .from('profiles')
+      .update({ 
+        cover_photo_ai_expanded: aiExpanded,
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', profileId)
+
+    logger.info(`AI расширение успешно выполнено: ${direction} для профиля ${profileId}`)
+
+    return NextResponse.json({
+      success: true,
+      expandedImageUrl,
+      creditsUsed: isAdmin ? 0 : EXPAND_COST,
+      remainingCredits: isAdmin ? '∞' : (userData.credits || 0) - EXPAND_COST,
+      message: isAdmin 
+        ? 'Изображение успешно расширено (админ - без списания кредитов)' 
+        : 'Изображение успешно расширено с помощью Gemini AI',
+      requestId,
+    })
+
+  } catch (error: any) {
+    logger.error(`[${requestId}] Ошибка в POST /api/ai/expand-image:`, error)
+    
+    // В случае ошибки не списываем кредиты
+    const message = error?.message || 'Внутренняя ошибка сервера'
+    const isGeminiImageFailure = typeof message === 'string' && message.startsWith(GEMINI_IMAGE_FAILURE_PREFIX)
+
+    return NextResponse.json(
+      { error: isGeminiImageFailure ? message.slice(GEMINI_IMAGE_FAILURE_PREFIX.length) : message, requestId },
+      { status: isGeminiImageFailure ? 422 : 500 }
+    )
+  }
+}
+
+/**
+ * Получить промпт для расширения изображения в разных направлениях
+ * Используется для AI outpainting через Gemini Image API
+ */
+function getExpansionPrompt(direction: string, templateId: string, expandPercent: number): string {
+  const baseInstruction = `Expand this image naturally to create a seamless continuation. 
+This is a profile cover photo for template "${templateId}". 
+Maintain the original style, colors, lighting, composition, and quality.
+Do not add any text, watermarks, or logos.
+Return an IMAGE output (no text response).`
+
+  const directionPrompts: Record<string, string> = {
+    top: `${baseInstruction}
+Extend the image UPWARD by adding ${expandPercent}% more space at the TOP.
+Continue the background, sky, or architectural elements naturally upward.
+Ensure the expansion looks organic and matches the original perfectly.`,
+    
+    bottom: `${baseInstruction}
+Extend the image DOWNWARD by adding ${expandPercent}% more space at the BOTTOM.
+Continue the background, ground, or lower elements naturally downward.
+Ensure the expansion looks organic and matches the original perfectly.`,
+    
+    left: `${baseInstruction}
+Extend the image to the LEFT by adding ${expandPercent}% more space on the LEFT SIDE.
+Continue the background, environment, or side elements naturally to the left.
+This is especially important for the "modern" template where the cover is on the left side.
+Ensure the expansion looks organic and matches the original perfectly.`,
+    
+    right: `${baseInstruction}
+Extend the image to the RIGHT by adding ${expandPercent}% more space on the RIGHT SIDE.
+Continue the background, environment, or side elements naturally to the right.
+Ensure the expansion looks organic and matches the original perfectly.`,
+    
+    all: `${baseInstruction}
+Extend the image in ALL DIRECTIONS by adding ${expandPercent}% more space on each side.
+Continue the background and environment naturally in all directions.
+Ensure all expansions look organic and match the original perfectly.`,
+  }
+
+  return directionPrompts[direction] || directionPrompts.all
+}
+
+function getFallbackExpansionPrompt(direction: string, expandPercent: number): string {
+  const base = `Outpaint (expand) this image seamlessly.
+Maintain the same style, colors, lighting, and realism.
+Do not add any text, logos, watermarks, or UI elements.
+Return an IMAGE output (no text response).`
+
+  return `${base}
+Expand the image ${direction.toUpperCase()} by about ${expandPercent}%.
+Continue the background/environment naturally.`
+}
+

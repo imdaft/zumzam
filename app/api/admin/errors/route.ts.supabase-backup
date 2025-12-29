@@ -1,0 +1,265 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { logger } from '@/lib/logger'
+
+/**
+ * API для получения ошибок (только для админов)
+ * GET /api/admin/errors
+ * 
+ * Query параметры:
+ * - limit: количество ошибок (по умолчанию 50)
+ * - offset: смещение для пагинации
+ * - errorType: фильтр по типу ошибки
+ * - isCritical: фильтр по критичности (true/false)
+ * - isResolved: фильтр по статусу решения (true/false)
+ * - groupBy: группировка ('message' | 'type' | 'none')
+ * - search: поиск по сообщению
+ * - timeRange: фильтр по времени ('1h' | '24h' | '7d' | '30d' | 'all')
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    
+    // Проверяем, что пользователь - админ
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      )
+    }
+
+    // Получаем query параметры
+    const searchParams = request.nextUrl.searchParams
+    const limit = parseInt(searchParams.get('limit') || '50', 10)
+    const offset = parseInt(searchParams.get('offset') || '0', 10)
+    const errorType = searchParams.get('errorType')
+    const isCritical = searchParams.get('isCritical')
+    const isResolved = searchParams.get('isResolved')
+    const groupBy = searchParams.get('groupBy') || 'none'
+    const search = searchParams.get('search')
+    const timeRange = searchParams.get('timeRange') || 'all'
+
+    // Строим запрос
+    let query = supabase
+      .from('errors')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+
+    // Применяем фильтр по времени
+    if (timeRange !== 'all') {
+      const now = new Date()
+      let since = new Date()
+      
+      switch (timeRange) {
+        case '1h':
+          since.setHours(now.getHours() - 1)
+          break
+        case '24h':
+          since.setHours(now.getHours() - 24)
+          break
+        case '7d':
+          since.setDate(now.getDate() - 7)
+          break
+        case '30d':
+          since.setDate(now.getDate() - 30)
+          break
+      }
+      
+      query = query.gte('created_at', since.toISOString())
+    }
+
+    // Применяем остальные фильтры
+    if (errorType) {
+      query = query.eq('error_type', errorType)
+    }
+    if (isCritical !== null) {
+      query = query.eq('is_critical', isCritical === 'true')
+    }
+    if (isResolved !== null) {
+      query = query.eq('is_resolved', isResolved === 'true')
+    }
+    if (search) {
+      query = query.or(`message.ilike.%${search}%,stack.ilike.%${search}%`)
+    }
+
+    // Если группировка по сообщению, используем агрегацию
+    if (groupBy === 'message') {
+      const { data: errors, error, count } = await query
+        .range(offset, offset + limit - 1)
+
+      if (error) {
+        logger.error('[Admin Errors] Query error', error)
+        return NextResponse.json(
+          { error: 'Failed to fetch errors' },
+          { status: 500 }
+        )
+      }
+
+      // Группируем ошибки по сообщению
+      const grouped = errors?.reduce((acc: any, error: any) => {
+        const key = error.message
+        if (!acc[key]) {
+          acc[key] = {
+            message: error.message,
+            error_type: error.error_type,
+            count: 0,
+            first_occurrence: error.created_at,
+            last_occurrence: error.created_at,
+            is_critical: error.is_critical,
+            is_resolved: error.is_resolved,
+            errors: [],
+          }
+        }
+        acc[key].count += 1
+        acc[key].last_occurrence = error.created_at > acc[key].last_occurrence 
+          ? error.created_at 
+          : acc[key].last_occurrence
+        acc[key].first_occurrence = error.created_at < acc[key].first_occurrence 
+          ? error.created_at 
+          : acc[key].first_occurrence
+        acc[key].is_critical = acc[key].is_critical || error.is_critical
+        acc[key].errors.push(error)
+        return acc
+      }, {})
+
+      const groupedArray = Object.values(grouped || {}).sort((a: any, b: any) => 
+        b.count - a.count
+      )
+
+      return NextResponse.json({
+        errors: groupedArray,
+        total: count || 0,
+        grouped: true,
+      })
+    }
+
+    // Обычный запрос без группировки
+    const { data: errors, error, count } = await query
+      .range(offset, offset + limit - 1)
+
+    if (error) {
+      logger.error('[Admin Errors] Query error', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch errors' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      errors: errors || [],
+      total: count || 0,
+      grouped: false,
+    })
+  } catch (error) {
+    logger.error('[Admin Errors] Exception', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Обновление ошибки (отметка как решенной)
+ * PATCH /api/admin/errors
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    
+    // Проверяем, что пользователь - админ
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      )
+    }
+
+    const body = await request.json()
+    const { errorId, isResolved } = body
+
+    if (!errorId || typeof isResolved !== 'boolean') {
+      return NextResponse.json(
+        { error: 'Missing errorId or isResolved' },
+        { status: 400 }
+      )
+    }
+
+    const updateData: any = {
+      is_resolved: isResolved,
+    }
+
+    if (isResolved) {
+      updateData.resolved_at = new Date().toISOString()
+      updateData.resolved_by = user.id
+    } else {
+      updateData.resolved_at = null
+      updateData.resolved_by = null
+    }
+
+    const { error } = await supabase
+      .from('errors')
+      .update(updateData)
+      .eq('id', errorId)
+
+    if (error) {
+      logger.error('[Admin Errors] Update error', error)
+      return NextResponse.json(
+        { error: 'Failed to update error' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    logger.error('[Admin Errors] Exception', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

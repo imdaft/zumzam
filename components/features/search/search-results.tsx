@@ -34,10 +34,10 @@ export function SearchResults({
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-lg font-semibold mb-4">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">
             Ищем: "{query}"
           </h2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <ServiceCardSkeleton key={i} />
             ))}
@@ -78,11 +78,17 @@ export function SearchResults({
       {query && (
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <h2 className="text-2xl font-bold">
+            <h2 className="text-2xl font-bold text-gray-900">
               Результаты поиска: "{query}"
             </h2>
             {method && (
-              <Badge variant={method === 'semantic' ? 'default' : 'secondary'}>
+              <Badge
+                className={
+                  method === 'semantic'
+                    ? 'rounded-full bg-blue-100 text-blue-700 px-2'
+                    : 'rounded-full bg-gray-100 text-gray-700 px-2'
+                }
+              >
                 {method === 'semantic' ? (
                   <>
                     <Sparkles className="mr-1 h-3 w-3" />
@@ -97,7 +103,7 @@ export function SearchResults({
               </Badge>
             )}
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-gray-600">
             Найдено: {totalResults} {totalResults === 1 ? 'результат' : 'результатов'}
           </p>
         </div>
@@ -106,10 +112,10 @@ export function SearchResults({
       {/* Услуги */}
       {services.length > 0 && (
         <div>
-          <h3 className="text-xl font-semibold mb-4">
+          <h3 className="text-xl font-bold text-gray-900 mb-4">
             Услуги ({services.length})
           </h3>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {services.map((service) => (
               <ServiceCard key={service.id} service={service} />
             ))}
@@ -120,7 +126,7 @@ export function SearchResults({
       {/* Профили (будут добавлены позже) */}
       {profiles.length > 0 && (
         <div>
-          <h3 className="text-xl font-semibold mb-4">
+          <h3 className="text-xl font-bold text-gray-900 mb-4">
             Студии и аниматоры ({profiles.length})
           </h3>
           {/* ProfileCard компоненты */}

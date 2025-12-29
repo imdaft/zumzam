@@ -1,0 +1,542 @@
+/**
+ * API для управления заказами
+ * GET /api/orders - получить список заказов
+ * POST /api/orders - создать заказ из корзины
+ */
+
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+import type { CreateOrderInput } from '@/types'
+
+async function ensureIncomingStageId(opts: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  profileId: string
+}): Promise<string | null> {
+  const { supabase, profileId } = opts
+
+  // 1) Пытаемся найти существующую воронку (приоритет: дефолтная).
+  const { data: pipelines, error: pipelinesError } = await supabase
+    .from('pipelines')
+    .select('id, is_default, position')
+    .eq('profile_id', profileId)
+    .order('is_default', { ascending: false })
+    .order('position', { ascending: true })
+    .limit(1)
+
+  if (pipelinesError) {
+    console.error('[Orders API] Failed to load pipelines:', pipelinesError)
+  }
+
+  let pipelineId = pipelines?.[0]?.id ?? null
+
+  // 2) Если воронки нет — создаём дефолтную (как в /api/pipelines GET).
+  if (!pipelineId) {
+    const { data: newPipeline, error: createPipelineError } = await supabase
+      .from('pipelines')
+      .insert({
+        profile_id: profileId,
+        name: 'Основная воронка',
+        description: 'Стандартная воронка для управления заявками',
+        is_default: true,
+      })
+      .select('id')
+      .single()
+
+    if (createPipelineError || !newPipeline?.id) {
+      console.error('[Orders API] Failed to create default pipeline:', createPipelineError)
+      return null
+    }
+
+    pipelineId = newPipeline.id
+
+    const defaultStages = [
+      { name: 'Входящие', color: 'orange', position: 0, is_system: true, system_status: 'pending' },
+      { name: 'Забронировано', color: 'blue', position: 50, is_system: true, system_status: 'confirmed' },
+      { name: 'В работе', color: 'yellow', position: 60, is_system: true, system_status: 'in_progress' },
+      { name: 'Завершено', color: 'green', position: 100, is_system: true, system_status: 'completed' },
+      { name: 'Отменено', color: 'gray', position: 101, is_system: true, system_status: 'cancelled' },
+      { name: 'Отклонено', color: 'red', position: 102, is_system: true, system_status: 'rejected' },
+    ]
+
+    const { data: createdStages, error: createStagesError } = await supabase
+      .from('pipeline_stages')
+      .insert(
+        defaultStages.map(stage => ({
+          pipeline_id: pipelineId,
+          ...stage,
+        }))
+      )
+      .select('id, system_status, position')
+
+    if (createStagesError) {
+      console.error('[Orders API] Failed to create default pipeline stages:', createStagesError)
+      // Воронку не откатываем — пусть остаётся, даже если этапы не создались
+    } else {
+      const incoming = createdStages?.find(s => s.system_status === 'pending') ?? createdStages?.find(s => s.position === 0)
+      if (incoming?.id) return incoming.id
+    }
+  }
+
+  // 3) Ищем "Входящие" в существующей воронке.
+  const { data: stages, error: stagesError } = await supabase
+    .from('pipeline_stages')
+    .select('id, system_status, position, is_system')
+    .eq('pipeline_id', pipelineId)
+    .order('position', { ascending: true })
+
+  if (stagesError) {
+    console.error('[Orders API] Failed to load pipeline stages:', stagesError)
+    return null
+  }
+
+  const incoming =
+    stages?.find(s => s.system_status === 'pending') ??
+    stages?.find(s => s.is_system && s.position === 0) ??
+    null
+
+  return incoming?.id ?? null
+}
+
+/**
+ * GET /api/orders - Получить список заказов
+ * Клиент видит свои заказы, поставщик - заказы для своих услуг
+ */
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get('status')
+    const role = searchParams.get('role') // 'client' или 'provider'
+    const backfillUnassigned = searchParams.get('backfill_unassigned') === '1'
+    const pipelineId = searchParams.get('pipeline_id')
+    
+    const supabase = await createClient()
+    
+    // Проверка авторизации
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Бекфилл для легаси-сделок без pipeline_stage_id (только провайдеру, по запросу)
+    if (role === 'provider' && backfillUnassigned) {
+      try {
+        const { data: unassigned, error: unassignedError } = await supabase
+          .from('orders')
+          .select('id, profile_id')
+          .eq('provider_id', user.id)
+          .is('pipeline_stage_id', null)
+          .limit(500)
+
+        if (unassignedError) {
+          console.error('[Orders API] Backfill: failed to load unassigned orders:', unassignedError)
+        } else if (unassigned && unassigned.length > 0) {
+          const profileIds = [...new Set(unassigned.map(o => o.profile_id).filter(Boolean))]
+          let updatedCount = 0
+
+          for (const profileId of profileIds) {
+            const incomingStageId = await ensureIncomingStageId({ supabase, profileId })
+            if (!incomingStageId) continue
+
+            const { data: updatedRows, error: updateError } = await supabase
+              .from('orders')
+              .update({
+                pipeline_stage_id: incomingStageId,
+                status: 'pending',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('provider_id', user.id)
+              .eq('profile_id', profileId)
+              .is('pipeline_stage_id', null)
+              .select('id')
+
+            if (updateError) {
+              console.error('[Orders API] Backfill: failed to update orders:', updateError)
+            } else {
+              updatedCount += updatedRows?.length || 0
+            }
+          }
+
+          if (updatedCount > 0) {
+            console.log('[Orders API] Backfill: updated orders:', updatedCount)
+          }
+        }
+      } catch (e) {
+        console.error('[Orders API] Backfill error:', e)
+      }
+    }
+
+    let query = supabase
+      .from('orders')
+      .select(`
+        *,
+        items:order_items (*),
+        profile:profiles (
+          id,
+          user_id,
+          display_name,
+          slug,
+          city,
+          phone,
+          email,
+          main_photo,
+          logo
+        ),
+        pipeline_stage:pipeline_stages (
+          id,
+          pipeline_id,
+          name,
+          color,
+          system_status
+        )
+      `)
+      .order('created_at', { ascending: false })
+
+    // Фильтр по роли
+    if (role === 'provider') {
+      query = query.eq('provider_id', user.id)
+    } else {
+      // По умолчанию показываем заказы клиента
+      query = query.eq('client_id', user.id)
+    }
+
+    // Фильтр по воронке (только для провайдера)
+    if (role === 'provider' && pipelineId) {
+      const { data: stageRows, error: stagesError } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', pipelineId)
+
+      if (stagesError) {
+        console.error('[Orders API] Ошибка получения этапов воронки:', stagesError)
+        return NextResponse.json(
+          { error: 'Failed to fetch pipeline stages' },
+          { status: 500 }
+        )
+      }
+
+      const stageIds = (stageRows || []).map(s => s.id).filter(Boolean)
+      if (stageIds.length === 0) {
+        return NextResponse.json({ orders: [], total: 0 })
+      }
+
+      query = query.in('pipeline_stage_id', stageIds)
+    }
+
+    // Фильтр по статусу
+    if (status) {
+      query = query.eq('status', status)
+    }
+
+    const { data: orders, error } = await query
+
+    if (error) {
+      console.error('[Orders API] Ошибка получения заказов:', error)
+      throw error
+    }
+
+    // Загружаем информацию о клиентах для всех заказов
+    if (orders && orders.length > 0) {
+      const clientIds = [...new Set(orders.map(order => order.client_id))]
+      
+      const { data: clients, error: clientsError } = await supabase
+        .from('users')
+        .select('id, email, full_name, avatar_url')
+        .in('id', clientIds)
+
+      // Маппим клиентов к заказам
+      if (!clientsError && clients) {
+        const clientsMap = new Map(clients.map(client => [client.id, client]))
+        orders.forEach(order => {
+          order.client = clientsMap.get(order.client_id) || null
+        })
+      }
+    }
+
+    return NextResponse.json({
+      orders: orders || [],
+      total: orders?.length || 0,
+    })
+  } catch (error: any) {
+    console.error('[Orders API] GET error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch orders' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/orders - Создать заказ из корзины
+ * Автоматически создает order_items из cart_items и очищает корзину
+ */
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+    let conversationId: string | null = null
+    
+    // Проверка авторизации
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body: CreateOrderInput = await request.json()
+    const {
+      profile_id,
+      event_date,
+      event_time,
+      event_address,
+      child_age,
+      children_count,
+      client_name,
+      client_phone,
+      client_email,
+      client_message,
+    } = body
+
+    // Валидация обязательных полей
+    if (!profile_id || !event_date || !event_time || !event_address) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
+
+    if (!client_name || !client_phone || !client_email) {
+      return NextResponse.json(
+        { error: 'Client contact information is required' },
+        { status: 400 }
+      )
+    }
+
+    // 1. Получаем элементы корзины (валидация не требуется - это система заявок)
+    const { data: cartItems, error: cartError } = await supabase
+      .from('cart_items')
+      .select(`
+        *,
+        service:services (
+          id,
+          title,
+          description,
+          price,
+          service_type,
+          is_package,
+          profile_id
+        )
+      `)
+      .eq('user_id', user.id)
+
+    if (cartError || !cartItems || cartItems.length === 0) {
+      return NextResponse.json(
+        { error: 'Cart is empty' },
+        { status: 400 }
+      )
+    }
+
+    // 3. Проверяем, что все услуги от одного профиля
+    const uniqueProfiles = new Set(cartItems.map(item => item.service.profile_id))
+    if (uniqueProfiles.size > 1) {
+      return NextResponse.json(
+        { error: 'All services must be from the same provider' },
+        { status: 400 }
+      )
+    }
+
+    if (!uniqueProfiles.has(profile_id)) {
+      return NextResponse.json(
+        { error: 'Services do not belong to the specified profile' },
+        { status: 400 }
+      )
+    }
+
+    // 3.5. Получаем user_id владельца профиля
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('id', profile_id)
+      .single()
+
+    if (profileError || !profileData) {
+      console.error('[Orders API] Ошибка получения профиля:', profileError)
+      return NextResponse.json(
+        { error: 'Profile not found' },
+        { status: 404 }
+      )
+    }
+
+    const actualProviderId = profileData.user_id
+
+    // 4. Вычисляем общую сумму
+    const totalAmount = cartItems.reduce((sum, item) => {
+      return sum + (item.price_snapshot * item.quantity)
+    }, 0)
+
+    // 5. Генерируем уникальный order_number
+    // Формат: YYMMDD-XXX (например: 241204-001) — дата + уникальный суффикс
+    const now = new Date()
+    const datePrefix = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+    // Берём последние 3 цифры timestamp для уникальности
+    const uniqueSuffix = String(Date.now()).slice(-3)
+    const orderNumber = `${datePrefix}-${uniqueSuffix}`
+
+    // Автоматически назначаем "Входящие" на сервере (чтобы CRM не делала пачку PATCH запросов)
+    const incomingStageId = await ensureIncomingStageId({ supabase, profileId: profile_id })
+
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        client_id: user.id,
+        provider_id: actualProviderId,
+        profile_id,
+        order_number: orderNumber,
+        status: 'pending',
+        pipeline_stage_id: incomingStageId,
+        total_amount: totalAmount,
+        payment_status: 'unpaid',
+        event_date,
+        event_time,
+        event_address,
+        child_age,
+        children_count,
+        client_name,
+        client_phone,
+        client_email,
+        client_message,
+      })
+      .select()
+      .single()
+
+    if (orderError) {
+      console.error('[Orders API] Ошибка создания заказа:', orderError)
+      throw orderError
+    }
+
+    // 6. Создаем элементы заказа из корзины
+    const orderItems = cartItems.map(item => ({
+      order_id: order.id,
+      service_id: item.service_id,
+      service_title: item.service.title,
+      service_description: item.service.description,
+      service_type: item.service.service_type,
+      is_package: item.service.is_package,
+      price: item.price_snapshot,
+      quantity: item.quantity,
+      subtotal: item.price_snapshot * item.quantity,
+      notes: item.notes,
+    }))
+
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(orderItems)
+
+    if (itemsError) {
+      console.error('[Orders API] Ошибка создания элементов заказа:', itemsError)
+      // Откатываем заказ если не удалось создать элементы
+      await supabase.from('orders').delete().eq('id', order.id)
+      throw itemsError
+    }
+
+    // 6.5. Создаем диалог для заказа
+    try {
+      const { data: convId, error: convError } = await supabase.rpc('get_or_create_conversation', {
+        p_source_type: 'order',
+        p_source_id: order.id,
+        p_participant_1: user.id,
+        p_participant_2: actualProviderId,
+        p_profile_id: profile_id
+      })
+
+      if (!convError && convId) {
+        conversationId = convId
+        await supabase
+          .from('orders')
+          .update({ conversation_id: convId })
+          .eq('id', order.id)
+      } else {
+        console.error('[Orders API] Failed to create conversation:', convError)
+      }
+    } catch (e) {
+      console.error('[Orders API] Error creating conversation:', e)
+    }
+
+    // 7. Очищаем корзину
+    const { error: clearError } = await supabase
+      .from('cart_items')
+      .delete()
+      .eq('user_id', user.id)
+
+    if (clearError) {
+      console.error('[Orders API] Ошибка очистки корзины:', clearError)
+      // Не критично, заказ уже создан
+    }
+
+    // 7.5. Создаем стартовое системное сообщение в чате (если чата ещё нет сообщений)
+    try {
+      if (conversationId) {
+        const { count } = await supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('conversation_id', conversationId)
+
+        if (!count || count === 0) {
+          const servicesSummary = orderItems
+            .slice(0, 5)
+            .map(item => `• ${item.service_title} ×${item.quantity}`)
+            .join('\n')
+
+          const content = [
+            `Новая заявка ${orderNumber}`,
+            `Клиент: ${client_name}, ${client_phone}${client_email ? ', ' + client_email : ''}`,
+            `Дата/время: ${event_date} ${event_time}`,
+            `Адрес: ${event_address}`,
+            `Сумма по корзине: ${totalAmount.toLocaleString()} ₽`,
+            client_message ? `Комментарий: ${client_message}` : null,
+            servicesSummary ? 'Услуги:\n' + servicesSummary : null,
+          ].filter(Boolean).join('\n')
+
+          await supabase
+            .from('messages')
+            .insert({
+              conversation_id: conversationId,
+              sender_id: user.id,
+              content,
+            })
+        }
+      }
+    } catch (e) {
+      console.error('[Orders API] Error creating system message:', e)
+    }
+
+    // 8. Получаем полный заказ с элементами
+    const { data: fullOrder } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        items:order_items (*),
+        profile:profiles (
+          id,
+          display_name,
+          slug,
+          city,
+          phone,
+          email
+        )
+      `)
+      .eq('id', order.id)
+      .single()
+
+    // TODO: Отправить уведомление поставщику
+
+    return NextResponse.json({
+      order: fullOrder || order,
+      message: 'Order created successfully',
+    }, { status: 201 })
+  } catch (error: any) {
+    console.error('[Orders API] POST error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to create order' },
+      { status: 500 }
+    )
+  }
+}
+

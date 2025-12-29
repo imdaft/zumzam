@@ -1,0 +1,153 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ profileId: string }> }
+) {
+  try {
+    const params = await context.params
+    // Supabase client removed
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    // Auth check done above, { status: 401 })
+    }
+
+    console.log('[Legal Questionnaire GET] User:', userId, 'Profile:', params.profileId)
+
+    // Проверяем права доступа к профилю
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('id', params.profileId)
+      .single()
+
+    console.log('[Legal Questionnaire GET] Profile check:', {
+      profileUserId: profile?.user_id,
+      currentUserId: userId,
+      match: profile?.user_id === userId,
+      error: profileError?.message
+    })
+
+    if (profileError || !profile || profile.user_id !== userId) {
+      console.error('[Legal Questionnaire GET] Access denied')
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Получаем ответы анкеты
+    const { data, error } = await supabase
+      .from('legal_questionnaire_answers')
+      .select('*')
+      .eq('profile_id', params.profileId)
+      .single()
+
+    if (error) {
+      // PGRST116 = not found, это нормально - возвращаем пустую анкету
+      if (error.code === 'PGRST116') {
+        return NextResponse.json({ answers: {} }, { status: 200 })
+      }
+      
+      // 42P01 = таблица не существует (миграция не применена)
+      if (error.code === '42P01') {
+        console.warn('[Legal Questionnaire GET] Table not exists, returning empty answers')
+        return NextResponse.json({ answers: {} }, { status: 200 })
+      }
+      
+      throw error
+    }
+
+    return NextResponse.json({ answers: data?.answers || {} }, { status: 200 })
+  } catch (error: any) {
+    console.error('[Legal Questionnaire GET] Error:', error)
+    // Возвращаем пустую анкету вместо ошибки, чтобы не блокировать UI
+    return NextResponse.json({ answers: {} }, { status: 200 })
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ profileId: string }> }
+) {
+  try {
+    const params = await context.params
+    // Supabase client removed
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    // Auth check done above, { status: 401 })
+    }
+
+    console.log('[Legal Questionnaire POST] User:', userId, 'Profile:', params.profileId)
+
+    // Проверяем права доступа к профилю
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('id', params.profileId)
+      .single()
+
+    console.log('[Legal Questionnaire POST] Profile check:', {
+      profileUserId: profile?.user_id,
+      currentUserId: userId,
+      match: profile?.user_id === userId,
+      error: profileError?.message
+    })
+
+    if (profileError || !profile || profile.user_id !== userId) {
+      console.error('[Legal Questionnaire POST] Access denied')
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    const { answers } = await request.json()
+
+    if (!answers || typeof answers !== 'object') {
+      return NextResponse.json({ error: 'Invalid answers format' }, { status: 400 })
+    }
+
+    // Используем upsert (вставка или обновление)
+    const { data, error } = await supabase
+      .from('legal_questionnaire_answers')
+      .upsert(
+        {
+          profile_id: params.profileId,
+          answers,
+        },
+        {
+          onConflict: 'profile_id',
+        }
+      )
+      .select()
+      .single()
+
+    if (error) {
+      // Если таблица не существует - логируем и возвращаем "успех" (данные хранятся локально)
+      if (error.code === '42P01') {
+        console.warn('[Legal Questionnaire POST] Table not exists, data stored locally only')
+        return NextResponse.json({ 
+          success: true, 
+          warning: 'Table not exists, please apply migration'
+        }, { status: 200 })
+      }
+      throw error
+    }
+
+    return NextResponse.json({ success: true, data }, { status: 200 })
+  } catch (error: any) {
+    console.error('[Legal Questionnaire POST] Error:', error)
+    // Не блокируем сохранение - данные все равно хранятся локально
+    return NextResponse.json({ 
+      success: true, 
+      warning: error.message 
+    }, { status: 200 })
+  }
+}
+

@@ -1,0 +1,182 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { z } from 'zod'
+
+const updateReviewSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected']),
+})
+
+interface RouteParams {
+  params: Promise<{
+    id: string
+  }>
+}
+
+/**
+ * PATCH /api/admin/reviews/[id]
+ * Обновить статус отзыва (одобрить/отклонить)
+ */
+export async function PATCH(request: Request, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userRoleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userRoleError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Валидируем данные
+    const body = await request.json()
+    const parsedData = updateReviewSchema.parse(body)
+
+    // Обновляем отзыв
+    const { data: updatedReview, error } = await supabase
+      .from('reviews')
+      .update({
+        status: parsedData.status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        profile:profiles!reviews_profile_id_fkey(id, display_name, slug),
+        reviewer:users!reviews_user_id_fkey(id, email)
+      `)
+      .single()
+
+    if (error) {
+      logger.error('Error updating review:', error)
+      return NextResponse.json({ error: 'Failed to update review' }, { status: 500 })
+    }
+
+    // Если отзыв одобрен, обновляем рейтинг профиля
+    if (parsedData.status === 'approved') {
+      // Получаем все одобренные отзывы для этого профиля
+      const { data: approvedReviews } = await supabase
+        .from('reviews')
+        .select('rating')
+        .eq('profile_id', updatedReview.profile_id)
+        .eq('status', 'approved')
+
+      if (approvedReviews && approvedReviews.length > 0) {
+        const avgRating = approvedReviews.reduce((sum, r) => sum + r.rating, 0) / approvedReviews.length
+        const reviewsCount = approvedReviews.length
+
+        // Обновляем профиль
+        await supabase
+          .from('profiles')
+          .update({
+            rating: Math.round(avgRating * 10) / 10, // Округляем до 1 знака
+            reviews_count: reviewsCount,
+          })
+          .eq('id', updatedReview.profile_id)
+      }
+    }
+
+    return NextResponse.json({ review: updatedReview })
+  } catch (error: any) {
+    logger.error('Admin review PATCH error:', error)
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+}
+
+/**
+ * DELETE /api/admin/reviews/[id]
+ * Удалить отзыв
+ */
+export async function DELETE(request: Request, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userRoleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userRoleError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Получаем информацию об отзыве перед удалением
+    const { data: review } = await supabase
+      .from('reviews')
+      .select('profile_id, status')
+      .eq('id', id)
+      .single()
+
+    // Удаляем отзыв
+    const { error } = await supabase
+      .from('reviews')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      logger.error('Error deleting review:', error)
+      return NextResponse.json({ error: 'Failed to delete review' }, { status: 500 })
+    }
+
+    // Если отзыв был одобрен, пересчитываем рейтинг профиля
+    if (review && review.status === 'approved') {
+      const { data: approvedReviews } = await supabase
+        .from('reviews')
+        .select('rating')
+        .eq('profile_id', review.profile_id)
+        .eq('status', 'approved')
+
+      const avgRating = approvedReviews && approvedReviews.length > 0
+        ? approvedReviews.reduce((sum, r) => sum + r.rating, 0) / approvedReviews.length
+        : 0
+      const reviewsCount = approvedReviews?.length || 0
+
+      await supabase
+        .from('profiles')
+        .update({
+          rating: avgRating > 0 ? Math.round(avgRating * 10) / 10 : null,
+          reviews_count: reviewsCount,
+        })
+        .eq('id', review.profile_id)
+    }
+
+    return NextResponse.json({ message: 'Review deleted successfully' })
+  } catch (error: any) {
+    logger.error('Admin review DELETE error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+

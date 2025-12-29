@@ -1,0 +1,57 @@
+/**
+ * API для валидации корзины
+ * GET /api/cart/validate - проверить валидность корзины
+ */
+
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+/**
+ * GET /api/cart/validate - Проверить валидность корзины
+ * ИЗМЕНЕНО: Теперь это система заявок, а не e-commerce
+ * Любая комбинация услуг валидна - клиент может заказать что угодно
+ */
+export async function GET() {
+  try {
+    const supabase = await createClient()
+    
+    // Проверка авторизации
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Получаем корзину для проверки
+    const { data: cartItems, error: cartError } = await supabase
+      .from('cart_items')
+      .select('id')
+      .eq('user_id', user.id)
+
+    if (cartError) {
+      console.error('[Cart Validate API] Ошибка получения корзины:', cartError)
+      // Если таблицы нет, считаем что корзина пуста но валидна
+      return NextResponse.json({
+        is_valid: false,
+        message: 'Корзина пуста. Добавьте услуги для создания заявки.',
+      })
+    }
+
+    // Для системы заявок - любая корзина валидна, если не пуста
+    const isEmpty = !cartItems || cartItems.length === 0
+    
+    return NextResponse.json({
+      is_valid: !isEmpty,
+      message: isEmpty 
+        ? 'Корзина пуста. Добавьте услуги для создания заявки.' 
+        : 'Готово к оформлению заявки',
+    })
+  } catch (error: any) {
+    console.error('[Cart Validate API] GET error:', error)
+    // В случае ошибки - всё равно разрешаем (это система заявок)
+    return NextResponse.json({
+      is_valid: true,
+      message: 'Готово к оформлению заявки',
+    })
+  }
+}
+

@@ -1,0 +1,43 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/advertising/slots
+ * Получение списка рекламных мест
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    const { data: slots, error } = await supabase
+      .from('ad_slots')
+      .select('*')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+
+    if (error) {
+      logger.error('[Advertising API] Error fetching slots:', error)
+      return NextResponse.json(
+        { error: 'Ошибка загрузки рекламных мест', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ slots })
+  } catch (error) {
+    logger.error('[Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

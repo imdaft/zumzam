@@ -1,0 +1,387 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://zumzam.ru'
+
+interface TelegramUpdate {
+  update_id: number
+  message?: {
+    message_id: number
+    from: {
+      id: number
+      first_name: string
+      last_name?: string
+      username?: string
+    }
+    chat: {
+      id: number
+      type: string
+    }
+    text?: string
+    date: number
+  }
+  callback_query?: {
+    id: string
+    from: {
+      id: number
+      first_name: string
+      username?: string
+    }
+    message?: {
+      message_id: number
+      chat: {
+        id: number
+      }
+    }
+    data?: string
+  }
+}
+
+// Отправка сообщения в Telegram
+async function sendMessage(chatId: number, text: string, options?: {
+  parse_mode?: string
+  reply_markup?: any
+}) {
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: options?.parse_mode || 'HTML',
+      reply_markup: options?.reply_markup,
+    }),
+  })
+}
+
+// Обработка команды /start
+async function handleStart(chatId: number, userId: number, username: string | undefined, args?: string) {
+  // Admin client removed
+  
+  // Если есть аргумент connect — это привязка аккаунта
+  if (args === 'connect') {
+    // Генерируем уникальный код для привязки
+    const connectCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+    
+    // Сохраняем код в базу временно
+    await prisma.telegram_connect_codes.upsert({
+      telegram_id: userId,
+      telegram_username: username,
+      code: connectCode,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 минут
+    }, {
+      onConflict: 'telegram_id',
+    })
+    
+    await sendMessage(chatId, 
+`🔗 <b>Привязка аккаунта ZumZam</b>
+
+Для привязки Telegram к вашему аккаунту, перейдите по ссылке и введите код:
+
+<code>${connectCode}</code>
+
+👉 <a href="${BASE_URL}/settings/telegram?code=${connectCode}">Привязать аккаунт</a>
+
+⏱ Код действителен 10 минут.`
+    )
+    return
+  }
+  
+  // Проверяем, есть ли уже привязка
+  const { data: existingUser } = await supabase
+    .from('telegram_users')
+    .select('*, profiles:profile_ids')
+    .eq('telegram_id', userId)
+    .single()
+  
+  if (existingUser?.user_id) {
+    await sendMessage(chatId,
+`👋 <b>С возвращением!</b>
+
+Ваш Telegram привязан к аккаунту ZumZam.
+
+📋 <b>Команды:</b>
+/board — Новые объявления на доске
+/subscriptions — Ваши подписки
+/settings — Настройки уведомлений
+/help — Помощь
+
+🔔 Вы будете получать уведомления о:
+• Новых объявлениях по вашим подпискам
+• Откликах на ваши объявления
+• Сообщениях в чатах`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📋 Открыть доску', url: `${BASE_URL}/board` }],
+            [{ text: '⚙️ Настройки', url: `${BASE_URL}/settings` }],
+          ],
+        },
+      }
+    )
+  } else {
+    await sendMessage(chatId,
+`👋 <b>Добро пожаловать в ZumZam!</b>
+
+Я — бот ZumZam. Помогу вам:
+• 🔔 Получать уведомления о новых объявлениях
+• 💬 Узнавать о новых сообщениях и откликах
+• 📋 Быстро просматривать заявки
+
+Для начала работы привяжите ваш аккаунт:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🔗 Привязать аккаунт', url: `${BASE_URL}/login?telegram=1` }],
+            [{ text: '📋 Открыть доску', url: `${BASE_URL}/board` }],
+          ],
+        },
+      }
+    )
+  }
+}
+
+// Обработка команды /board
+async function handleBoard(chatId: number) {
+  // Admin client removed
+  
+  // Получаем последние объявления
+  const { data: requests } = await supabase
+    .from('order_requests')
+    .select('id, title, category, city, event_date, budget')
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(5)
+  
+  if (!requests?.length) {
+    await sendMessage(chatId, '📋 Пока нет активных объявлений.')
+    return
+  }
+  
+  let message = '📋 <b>Последние объявления:</b>\n\n'
+  
+  for (const req of requests) {
+    const date = new Date(req.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+    message += `• <b>${req.title}</b>\n`
+    message += `  📍 ${req.city} · 📅 ${date}`
+    if (req.budget) message += ` · 💰 ${req.budget}₽`
+    message += '\n\n'
+  }
+  
+  await sendMessage(chatId, message, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '📋 Все объявления', url: `${BASE_URL}/board` }],
+      ],
+    },
+  })
+}
+
+// Обработка команды /subscriptions
+async function handleSubscriptions(chatId: number, telegramId: number) {
+  // Admin client removed
+  
+  // Находим пользователя
+  const { data: telegramUser } = await supabase
+    .from('telegram_users')
+    .select('user_id')
+    .eq('telegram_id', telegramId)
+    .single()
+  
+  if (!telegramUser?.user_id) {
+    await sendMessage(chatId, 
+`⚠️ Ваш Telegram не привязан к аккаунту.
+
+Привяжите аккаунт, чтобы управлять подписками.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🔗 Привязать', callback_data: 'connect' }],
+          ],
+        },
+      }
+    )
+    return
+  }
+  
+  // Получаем подписки
+  const { data: subscriptions } = await supabase
+    .from('board_subscriptions')
+    .select('*')
+    .eq('user_id', telegramUser.user_id)
+    .eq('is_active', true)
+  
+  if (!subscriptions?.length) {
+    await sendMessage(chatId,
+`📭 У вас нет активных подписок.
+
+Создайте подписку, чтобы получать уведомления о новых объявлениях.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '➕ Открыть доску', url: `${BASE_URL}/board` }],
+          ],
+        },
+      }
+    )
+    return
+  }
+  
+  let message = `🔔 <b>Ваши подписки (${subscriptions.length}):</b>\n\n`
+  
+  for (const sub of subscriptions) {
+    message += `• <b>${sub.name || 'Без названия'}</b>\n`
+    if (sub.matches_count) {
+      message += `  📊 Найдено: ${sub.matches_count} объявлений\n`
+    }
+    message += '\n'
+  }
+  
+  await sendMessage(chatId, message, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '⚙️ Открыть доску', url: `${BASE_URL}/board` }],
+      ],
+    },
+  })
+}
+
+// Обработка команды /settings
+async function handleSettings(chatId: number, telegramId: number) {
+  // Admin client removed
+  
+  const { data: telegramUser } = await supabase
+    .from('telegram_users')
+    .select('*')
+    .eq('telegram_id', telegramId)
+    .single()
+  
+  if (!telegramUser?.user_id) {
+    await sendMessage(chatId, '⚠️ Сначала привяжите аккаунт ZumZam.', {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔗 Привязать', callback_data: 'connect' }],
+        ],
+      },
+    })
+    return
+  }
+  
+  const notifications = []
+  if (telegramUser.notify_new_requests) notifications.push('📋 Новые заявки')
+  if (telegramUser.notify_messages) notifications.push('💬 Сообщения')
+  if (telegramUser.notify_order_status) notifications.push('📊 Статусы заказов')
+  
+  await sendMessage(chatId,
+`⚙️ <b>Настройки уведомлений</b>
+
+Активные уведомления:
+${notifications.length ? notifications.join('\n') : '— Нет активных'}
+
+Для изменения настроек перейдите на сайт:`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '⚙️ Открыть настройки', url: `${BASE_URL}/settings` }],
+        ],
+      },
+    }
+  )
+}
+
+// Обработка команды /help
+async function handleHelp(chatId: number) {
+  await sendMessage(chatId,
+`📖 <b>Помощь по боту ZumZam</b>
+
+<b>Доступные команды:</b>
+
+/start — Начало работы
+/board — Последние объявления
+/subscriptions — Ваши подписки
+/settings — Настройки уведомлений
+/help — Эта справка
+
+<b>Как привязать аккаунт?</b>
+1. Зарегистрируйтесь на ${BASE_URL}
+2. Перейдите в Настройки → Telegram
+3. Нажмите "Привязать Telegram"
+
+<b>Вопросы?</b>
+Напишите нам: support@zumzam.ru`
+  )
+}
+
+// Обработка callback_query
+async function handleCallback(callbackId: string, chatId: number, telegramId: number, data: string) {
+  if (data === 'connect') {
+    await handleStart(chatId, telegramId, undefined, 'connect')
+  }
+  
+  // Ответ на callback
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: callbackId }),
+  })
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const update: TelegramUpdate = await request.json()
+    
+    // Обработка сообщений
+    if (update.message?.text) {
+      const { chat, from, text } = update.message
+      const [command, ...args] = text.split(' ')
+      
+      switch (command.toLowerCase()) {
+        case '/start':
+          await handleStart(chat.id, from.id, from.username, args[0])
+          break
+        case '/board':
+          await handleBoard(chat.id)
+          break
+        case '/subscriptions':
+          await handleSubscriptions(chat.id, from.id)
+          break
+        case '/settings':
+          await handleSettings(chat.id, from.id)
+          break
+        case '/help':
+          await handleHelp(chat.id)
+          break
+        default:
+          // Любое другое сообщение — показываем подсказку
+          if (text.startsWith('/')) {
+            await sendMessage(chat.id, 
+              '❓ Неизвестная команда. Используйте /help для списка команд.'
+            )
+          }
+      }
+    }
+    
+    // Обработка callback
+    if (update.callback_query) {
+      const { id, from, message, data } = update.callback_query
+      if (message && data) {
+        await handleCallback(id, message.chat.id, from.id, data)
+      }
+    }
+    
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Telegram webhook error:', error)
+    return NextResponse.json({ ok: true }) // Всегда возвращаем 200 для Telegram
+  }
+}
+
+// GET для проверки
+export async function GET() {
+  return NextResponse.json({ status: 'Telegram webhook is active' })
+}
+

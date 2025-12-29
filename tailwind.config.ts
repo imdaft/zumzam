@@ -9,6 +9,10 @@ export default {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			sans: ['"Helvetica Neue"', 'Helvetica', 'Arial', 'system-ui', 'sans-serif'],
+  			nunito: ['Nunito', 'system-ui', 'sans-serif'],
+  		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
@@ -54,8 +58,54 @@ export default {
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
-  			sm: 'calc(var(--radius) - 4px)'
-  		}
+  			sm: 'calc(var(--radius) - 4px)',
+  			// Адаптивные округления (используют CSS переменные)
+  			'adaptive-xs': 'var(--radius-xs)',
+  			'adaptive-sm': 'var(--radius-sm)',
+  			'adaptive-md': 'var(--radius-md)',
+  			'adaptive-lg': 'var(--radius-lg)',
+  			'adaptive-xl': 'var(--radius-xl)',
+  			'adaptive-2xl': 'var(--radius-2xl)',
+  		},
+  		// Адаптивные отступы
+  		spacing: {
+  			'section': 'var(--spacing-section)',
+  			'card-p': 'var(--spacing-card)',
+  			'container-p': 'var(--spacing-container)',
+  			'safe-top': 'var(--safe-area-top)',
+  			'safe-bottom': 'var(--safe-area-bottom)',
+  			'header': 'var(--height-header)',
+  			'bottom-nav': 'var(--height-bottom-nav)',
+  		},
+  		// Адаптивные высоты
+  		height: {
+  			'header': 'var(--height-header)',
+  			'bottom-nav': 'var(--height-bottom-nav)',
+  			'button': 'var(--height-button)',
+  			'input': 'var(--height-input)',
+  		},
+  		minHeight: {
+  			'button': 'var(--height-button)',
+  			'input': 'var(--height-input)',
+  		},
+  		// Адаптивные тени
+  		boxShadow: {
+  			'card': 'var(--shadow-card)',
+  			'card-hover': 'var(--shadow-card-hover)',
+  			'sheet': 'var(--shadow-sheet)',
+  			'modal': 'var(--shadow-modal)',
+  		},
+		// Кастомные breakpoints для точной адаптации
+		screens: {
+			'xs': '375px',    // iPhone SE, маленькие телефоны
+			// sm: 640px (по умолчанию)
+			// md: 768px (по умолчанию)
+			// lg: 1024px (по умолчанию)
+			'chat': '1200px',  // Для страницы messages (3 панели)
+			// xl: 1280px (по умолчанию)
+			'touch': { 'raw': '(hover: none)' },  // Устройства с тач-экраном
+			'mouse': { 'raw': '(hover: hover)' }, // Устройства с мышью
+		},
   	}
   },
   plugins: [require("tailwindcss-animate")],

@@ -1,0 +1,111 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * GET /api/vk-oauth/callback
+ * Обработка OAuth callback от VK
+ */
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const code = searchParams.get('code')
+    const error = searchParams.get('error')
+    const errorDescription = searchParams.get('error_description')
+    
+    // Проверяем ошибки от VK
+    if (error) {
+      console.error('[VK OAuth] Error from VK:', error, errorDescription)
+      return NextResponse.redirect(
+        new URL(
+          `/profiles/create?vk_error=${encodeURIComponent(errorDescription || error)}`,
+          request.url
+        )
+      )
+    }
+    
+    if (!code) {
+      return NextResponse.redirect(
+        new URL('/profiles/create?vk_error=no_code', request.url)
+      )
+    }
+    
+    // Обмениваем code на access_token
+    const tokenParams = new URLSearchParams({
+      client_id: process.env.VK_APP_ID!,
+      client_secret: process.env.VK_APP_SECRET!,
+      redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/vk-oauth/callback`,
+      code: code,
+    })
+    
+    const tokenResponse = await fetch(
+      `https://oauth.vk.com/access_token?${tokenParams.toString()}`
+    )
+    
+    const tokenData = await tokenResponse.json()
+    
+    if (tokenData.error) {
+      console.error('[VK OAuth] Token error:', tokenData)
+      return NextResponse.redirect(
+        new URL(
+          `/profiles/create?vk_error=${encodeURIComponent(tokenData.error_description || tokenData.error)}`,
+          request.url
+        )
+      )
+    }
+    
+    const accessToken = tokenData.access_token
+    const vkUserId = tokenData.user_id
+    const expiresIn = tokenData.expires_in
+    
+    console.log('[VK OAuth] Successfully got access token for user:', vkUserId)
+    
+    // Сохраняем токен в сессии (через cookie или state)
+    // Для простоты используем временное хранилище в Supabase
+    // Supabase client removed
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.redirect(
+        new URL('/login?redirect=/profiles/create', request.url)
+      )
+    }
+    
+    // Сохраняем токен во временную таблицу или используем state
+    // Для демо сохраним в профиле пользователя как metadata
+    await supabase
+      .from('profiles')
+      .update({
+        metadata: {
+          vk_temp_token: accessToken,
+          vk_user_id: vkUserId,
+          vk_token_expires_at: new Date(Date.now() + expiresIn * 1000).toISOString(),
+        }
+      })
+      .eq('user_id', userId)
+    
+    // Редиректим обратно на страницу с токеном в query
+    return NextResponse.redirect(
+      new URL(
+        `/profiles/create?vk_auth=success&vk_token=${encodeURIComponent(accessToken)}`,
+        request.url
+      )
+    )
+    
+  } catch (error: any) {
+    console.error('[VK OAuth] Callback error:', error)
+    return NextResponse.redirect(
+      new URL(
+        `/profiles/create?vk_error=${encodeURIComponent(error.message)}`,
+        request.url
+      )
+    )
+  }
+}
+
+

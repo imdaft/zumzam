@@ -1,0 +1,84 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+// GET /api/conversations/ensure-for-order?order_id={id}
+// Гарантирует, что у заказа есть conversation_id
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const orderId = searchParams.get('order_id')
+
+    if (!orderId) {
+      return NextResponse.json({ error: 'order_id is required' }, { status: 400 })
+    }
+
+    const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Берём заказ
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, client_id, provider_id, profile_id, conversation_id')
+      .eq('id', orderId)
+      .single()
+
+    if (orderError || !order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Проверка прав
+    if (order.client_id !== user.id && order.provider_id !== user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Если уже есть — возвращаем
+    if (order.conversation_id) {
+      return NextResponse.json({ conversation_id: order.conversation_id })
+    }
+
+    // Создаём / получаем через RPC
+    const { data: convId, error: convError } = await supabase.rpc('get_or_create_conversation', {
+      p_source_type: 'order',
+      p_source_id: order.id,
+      p_participant_1: order.client_id,
+      p_participant_2: order.provider_id,
+      p_profile_id: order.profile_id,
+    })
+
+    if (convError || !convId) {
+      console.error('[Conversation ensure] rpc error:', convError)
+      return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 })
+    }
+
+    await supabase.from('orders').update({ conversation_id: convId }).eq('id', order.id)
+
+    return NextResponse.json({ conversation_id: convId })
+  } catch (error: any) {
+    console.error('[Conversation ensure] error:', error)
+    return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

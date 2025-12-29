@@ -1,0 +1,333 @@
+/**
+ * API для управления воронками продаж
+ * GET - получить все воронки профиля
+ * POST - создать новую воронку
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+const REQUIRED_SYSTEM_STAGES: Array<{
+  system_status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rejected'
+  name: string
+  color: string
+  position: number
+}> = [
+  { system_status: 'pending', name: 'Входящие', color: 'orange', position: 0 },
+  { system_status: 'confirmed', name: 'Забронировано', color: 'blue', position: 50 },
+  { system_status: 'in_progress', name: 'В работе', color: 'yellow', position: 60 },
+  { system_status: 'completed', name: 'Завершено', color: 'green', position: 100 },
+  { system_status: 'cancelled', name: 'Отменено', color: 'gray', position: 101 },
+  { system_status: 'rejected', name: 'Отклонено', color: 'red', position: 102 },
+]
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Получаем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    // Получаем все профили пользователя (у провайдера их может быть несколько)
+    let { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('user_id', user.id)
+
+    // Если профиль найден, но роль в users = 'client' → обновляем на 'provider'
+    if (profiles && profiles.length > 0 && userData?.role === 'client') {
+      await supabase
+        .from('users')
+        .update({ role: 'provider' })
+        .eq('id', user.id)
+    }
+
+    // Если профиль не найден
+    if (profileError || !profiles || profiles.length === 0) {
+      // Для админа пытаемся взять любой его профиль (может быть несколько)
+      if (userData?.role === 'admin') {
+        const { data: anyProfiles } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .limit(50)
+        
+        if (anyProfiles && anyProfiles.length > 0) {
+          profiles = anyProfiles
+        } else {
+          return NextResponse.json({ error: 'No profiles found. Please create a profile first.' }, { status: 404 })
+        }
+      } else {
+        return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      }
+    }
+
+    const profileIds = profiles.map((p: any) => p.id).filter(Boolean)
+
+    // Гарантируем, что у каждого профиля есть хотя бы одна воронка (дефолтная).
+    for (const profileId of profileIds) {
+      const { data: hasAny } = await supabase
+        .from('pipelines')
+        .select('id')
+        .eq('profile_id', profileId)
+        .limit(1)
+
+      if (hasAny && hasAny.length > 0) continue
+
+      // Повторная проверка (защита от race condition)
+      const { data: doubleCheck } = await supabase
+        .from('pipelines')
+        .select('id')
+        .eq('profile_id', profileId)
+        .limit(1)
+
+      if (doubleCheck && doubleCheck.length > 0) continue
+
+      const { data: newPipeline, error: createError } = await supabase
+        .from('pipelines')
+        .insert({
+          profile_id: profileId,
+          name: 'Основная воронка',
+          description: 'Стандартная воронка для управления сделками',
+          is_default: true,
+        })
+        .select('id')
+        .single()
+
+      if (createError || !newPipeline?.id) {
+        console.error('Error creating default pipeline:', createError)
+        continue
+      }
+
+      const defaultStages = [
+        { name: 'Входящие', color: 'orange', position: 0, is_system: true, system_status: 'pending' },
+        { name: 'Забронировано', color: 'blue', position: 50, is_system: true, system_status: 'confirmed' },
+        { name: 'В работе', color: 'yellow', position: 60, is_system: true, system_status: 'in_progress' },
+        { name: 'Завершено', color: 'green', position: 100, is_system: true, system_status: 'completed' },
+        { name: 'Отменено', color: 'gray', position: 101, is_system: true, system_status: 'cancelled' },
+        { name: 'Отклонено', color: 'red', position: 102, is_system: true, system_status: 'rejected' },
+      ]
+
+      await supabase
+        .from('pipeline_stages')
+        .insert(
+          defaultStages.map(stage => ({
+            pipeline_id: newPipeline.id,
+            ...stage,
+          }))
+        )
+    }
+
+    // Получаем все воронки с этапами (по всем профилям)
+    const { data: pipelines, error: pipelinesError } = await supabase
+      .from('pipelines')
+      .select(`
+        *,
+        profile:profiles(id, display_name),
+        stages:pipeline_stages(*)
+      `)
+      .in('profile_id', profileIds)
+      .order('profile_id', { ascending: true })
+      .order('position', { ascending: true })
+
+    if (pipelinesError) {
+      console.error('Error fetching pipelines:', pipelinesError)
+      return NextResponse.json({ error: 'Failed to fetch pipelines' }, { status: 500 })
+    }
+
+    // Гарантируем наличие всех системных этапов в каждой воронке (миграция "на лету")
+    // Это нужно, чтобы CRM/заявки всегда могли сопоставлять `orders.status` ↔ `pipeline_stages.system_status`.
+    for (const pipeline of pipelines || []) {
+      const stages: any[] = pipeline.stages || []
+      const systemByStatus = new Map<string, any>()
+      for (const s of stages) {
+        if (s?.system_status) systemByStatus.set(s.system_status, s)
+      }
+
+      // Пытаемся "конвертировать" старый кастомный этап "В работе" → системный in_progress,
+      // чтобы избежать дубля в интерфейсе.
+      if (!systemByStatus.has('in_progress')) {
+        const legacyInProgress = stages.find(
+          (s: any) =>
+            !s?.is_system &&
+            typeof s?.name === 'string' &&
+            s.name.trim().toLowerCase() === 'в работе'
+        )
+        if (legacyInProgress?.id) {
+          const { error: updErr } = await supabase
+            .from('pipeline_stages')
+            .update({
+              is_system: true,
+              system_status: 'in_progress',
+              position: 60,
+              color: legacyInProgress.color || 'yellow',
+            })
+            .eq('id', legacyInProgress.id)
+
+          if (!updErr) {
+            legacyInProgress.is_system = true
+            legacyInProgress.system_status = 'in_progress'
+            legacyInProgress.position = 60
+          } else {
+            console.error('Failed to migrate legacy in_progress stage:', updErr)
+          }
+        }
+      }
+
+      // Вставляем отсутствующие системные этапы
+      const missing = REQUIRED_SYSTEM_STAGES.filter((req) => !systemByStatus.has(req.system_status))
+      if (missing.length > 0) {
+        const { data: inserted, error: insErr } = await supabase
+          .from('pipeline_stages')
+          .insert(
+            missing.map((s) => ({
+              pipeline_id: pipeline.id,
+              name: s.name,
+              color: s.color,
+              position: s.position,
+              is_system: true,
+              system_status: s.system_status,
+            }))
+          )
+          .select('*')
+
+        if (insErr) {
+          console.error('Failed to insert missing system stages:', insErr)
+        } else if (inserted && inserted.length > 0) {
+          pipeline.stages = [...stages, ...inserted]
+        }
+      }
+    }
+
+    // Сортируем этапы по position
+    const pipelinesWithSortedStages = (pipelines || []).map((pipeline: any) => ({
+      ...pipeline,
+      stages: (pipeline.stages || []).sort((a: any, b: any) => a.position - b.position)
+    }))
+
+    return NextResponse.json({ pipelines: pipelinesWithSortedStages })
+  } catch (error: any) {
+    console.error('Pipelines GET error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { name, description, profile_id: requestedProfileId } = body
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    }
+
+    // Получаем profile_id (если профилей несколько — берём первый, либо используем переданный)
+    if (requestedProfileId && typeof requestedProfileId !== 'string') {
+      return NextResponse.json({ error: 'Invalid profile_id' }, { status: 400 })
+    }
+
+    let profileId = requestedProfileId || null
+
+    if (!profileId) {
+      const { data: profileRow, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .single()
+
+      if (profileError || !profileRow?.id) {
+        return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      }
+
+      profileId = profileRow.id
+    }
+
+    // Проверяем, что профиль принадлежит пользователю
+    const { data: ownership, error: ownershipError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', profileId)
+      .eq('user_id', user.id)
+      .limit(1)
+
+    if (ownershipError || !ownership || ownership.length === 0) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    // Создаём воронку
+    const { data: pipeline, error: pipelineError } = await supabase
+      .from('pipelines')
+      .insert({
+        profile_id: profileId,
+        name: name.trim(),
+        description: description || null,
+        is_default: false,
+      })
+      .select()
+      .single()
+
+    if (pipelineError) {
+      console.error('Error creating pipeline:', pipelineError)
+      return NextResponse.json({ error: 'Failed to create pipeline' }, { status: 500 })
+    }
+
+    // Создаём базовые этапы для новой воронки
+    const defaultStages = [
+      { name: 'Входящие', color: 'orange', position: 0, is_system: true, system_status: 'pending' },
+      { name: 'Забронировано', color: 'blue', position: 50, is_system: true, system_status: 'confirmed' },
+      { name: 'В работе', color: 'yellow', position: 60, is_system: true, system_status: 'in_progress' },
+      { name: 'Завершено', color: 'green', position: 100, is_system: true, system_status: 'completed' },
+      { name: 'Отменено', color: 'gray', position: 101, is_system: true, system_status: 'cancelled' },
+      { name: 'Отклонено', color: 'red', position: 102, is_system: true, system_status: 'rejected' },
+    ]
+
+    const { error: stagesError } = await supabase
+      .from('pipeline_stages')
+      .insert(
+        defaultStages.map(stage => ({
+          pipeline_id: pipeline.id,
+          ...stage
+        }))
+      )
+
+    if (stagesError) {
+      console.error('Error creating stages:', stagesError)
+      // Откатываем создание воронки
+      await supabase.from('pipelines').delete().eq('id', pipeline.id)
+      return NextResponse.json({ error: 'Failed to create stages' }, { status: 500 })
+    }
+
+    // Получаем полную воронку с этапами
+    const { data: fullPipeline } = await supabase
+      .from('pipelines')
+      .select(`
+        *,
+        stages:pipeline_stages(*)
+      `)
+      .eq('id', pipeline.id)
+      .single()
+
+    return NextResponse.json({ pipeline: fullPipeline }, { status: 201 })
+  } catch (error: any) {
+    console.error('Pipelines POST error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+

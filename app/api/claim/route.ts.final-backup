@@ -1,0 +1,229 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * POST /api/claim
+ * Создание заявки на получение владения профилем (claim request)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const {
+      profile_id,
+      contact_name,
+      contact_phone,
+      contact_email,
+      position,
+      proof_description,
+      proof_links,
+    } = body
+
+    // Валидация обязательных полей
+    if (!profile_id) {
+      return NextResponse.json(
+        { error: 'ID профиля обязателен' },
+        { status: 400 }
+      )
+    }
+
+    if (!contact_name || contact_name.length < 2) {
+      return NextResponse.json(
+        { error: 'Укажите ваше имя' },
+        { status: 400 }
+      )
+    }
+
+    if (!contact_email) {
+      return NextResponse.json(
+        { error: 'Укажите email' },
+        { status: 400 }
+      )
+    }
+
+    if (!proof_description || proof_description.length < 10) {
+      return NextResponse.json(
+        { error: 'Опишите, как вы можете подтвердить владение' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, существует ли профиль и его статус
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, claim_status, user_id, display_name')
+      .eq('id', profile_id)
+      .single()
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: 'Профиль не найден' },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем, не забран ли уже профиль
+    if (profile.claim_status === 'claimed' && profile.user_id) {
+      return NextResponse.json(
+        { error: 'Этот профиль уже имеет владельца' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, нет ли уже заявки от этого пользователя
+    const { data: existingRequest } = await supabase
+      .from('profile_claim_requests')
+      .select('id, status')
+      .eq('profile_id', profile_id)
+      .eq('user_id', userId)
+      .single()
+
+    if (existingRequest) {
+      if (existingRequest.status === 'pending') {
+        return NextResponse.json(
+          { error: 'Вы уже подали заявку на этот профиль. Она находится на рассмотрении.' },
+          { status: 400 }
+        )
+      }
+      if (existingRequest.status === 'approved') {
+        return NextResponse.json(
+          { error: 'Ваша заявка уже была одобрена.' },
+          { status: 400 }
+        )
+      }
+      // Если заявка была отклонена, разрешаем создать новую (удаляем старую)
+      if (existingRequest.status === 'rejected') {
+        await supabase
+          .from('profile_claim_requests')
+          .delete()
+          .eq('id', existingRequest.id)
+      }
+    }
+
+    // Создаём заявку
+    const { data: newRequest, error: createError } = await supabase
+      .from('profile_claim_requests')
+      .insert({
+        profile_id,
+        user_id: userId,
+        contact_name,
+        contact_phone: contact_phone || null,
+        contact_email,
+        position: position || null,
+        proof_description,
+        proof_links: proof_links || [],
+        status: 'pending',
+      })
+      .select()
+      .single()
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    // Обновляем статус профиля на pending (заявка на рассмотрении)
+    await supabase
+      .from('profiles')
+      .update({ claim_status: 'pending' })
+      .eq('id', profile_id)
+
+    return NextResponse.json({
+      success: true,
+      request: newRequest,
+      message: 'Заявка успешно отправлена на рассмотрение',
+    })
+  } catch (error) {
+    console.error('Claim API error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * GET /api/claim?profile_id=xxx
+ * Получение статуса заявки текущего пользователя
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    const { searchParams } = new URL(request.url)
+    const profileId = searchParams.get('profile_id')
+
+    if (!profileId) {
+      return NextResponse.json(
+        { error: 'ID профиля обязателен' },
+        { status: 400 }
+      )
+    }
+
+    const { data: claimRequest, error } = await supabase
+      .from('profile_claim_requests')
+      .select('*')
+      .eq('profile_id', profileId)
+      .eq('user_id', userId)
+      .single()
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error fetching claim request:', error)
+      return NextResponse.json(
+        { error: 'Ошибка получения заявки' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      request: claimRequest || null,
+    })
+  } catch (error) {
+    console.error('Claim GET API error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

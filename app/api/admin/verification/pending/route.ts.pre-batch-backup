@@ -1,0 +1,66 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+/**
+ * API для получения профилей, ожидающих верификацию
+ * GET /api/admin/verification/pending - Получить список профилей со статусом "pending"
+ */
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { NextResponse } from 'next/server'
+
+export async function GET() {
+  try {
+    // Supabase client removed
+    
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Проверяем, что пользователь - админ
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (!userData || userData.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 })
+    }
+
+    // Получаем профили со статусом "pending"
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('verification_status', 'pending')
+      .order('updated_at', { ascending: true }) // Старые заявки в начале
+
+    if (error) {
+      console.error('Get pending profiles error:', error)
+      throw error
+    }
+
+    return NextResponse.json({
+      profiles: profiles || [],
+      total: profiles?.length || 0,
+    })
+  } catch (error: any) {
+    console.error('Get pending profiles error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to get pending profiles' },
+      { status: 500 }
+    )
+  }
+}
+

@@ -1,0 +1,68 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+
+/**
+ * DELETE /api/admin/cleanup-non-venue-locations
+ * Удаляет profile_locations для профилей не категории 'venue'
+ * Доступно только админу
+ */
+export async function DELETE() {
+  try {
+    // Supabase client removed
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Admin client removed
+
+    const { count, error } = await admin
+      .from('profile_locations')
+      .delete({ count: 'exact' })
+      .filter('profile_id', 'in', admin
+        .from('profiles')
+        .select('id')
+        .neq('category', 'venue'))
+
+    if (error) {
+      logger.error('Cleanup error:', error)
+      return NextResponse.json({ error: 'Failed to cleanup' }, { status: 500 })
+    }
+
+    return NextResponse.json({ removed: count || 0 })
+  } catch (error) {
+    logger.error('Cleanup exception:', error)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+
+

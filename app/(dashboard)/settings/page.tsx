@@ -1,38 +1,36 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/client'
-import { User, Camera, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
-import { useUser } from '@/lib/hooks/useUser'
+import { User, Camera, Loader2, CheckCircle2, AlertCircle, Mail, Phone, LogOut, ChevronLeft, Bell, ChevronRight } from 'lucide-react'
+import { useAuth } from '@/lib/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import Link from 'next/link'
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
-// Схема валидации для обновления профиля
 const profileSchema = z.object({
   full_name: z
     .string()
-    .min(2, 'Имя должно содержать минимум 2 символа')
-    .max(100, 'Имя слишком длинное'),
+    .min(2, 'Минимум 2 символа')
+    .max(100, 'Слишком длинное'),
   phone: z
     .string()
     .optional()
@@ -41,44 +39,68 @@ const profileSchema = z.object({
         if (!val || val.length === 0) return true
         return /^(\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}$/.test(val)
       },
-      {
-        message: 'Некорректный формат телефона',
-      }
+      { message: 'Некорректный формат' }
     ),
+  role: z.enum(['client', 'provider']).optional(),
 })
 
 type ProfileInput = z.infer<typeof profileSchema>
 
-/**
- * Страница настроек профиля
- */
-export default function SettingsPage() {
-  const { user, profile, isLoading: isUserLoading } = useUser()
+function SettingsPage() {
+  const { user, profile, isLoading: isUserLoading } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [currentRole, setCurrentRole] = useState<'client' | 'provider' | 'admin'>('client')
 
-  const supabase = createClient()
+  const handleSignOut = () => {
+    if (typeof window !== 'undefined') {
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes('supabase') || key.includes('sb-')) {
+          localStorage.removeItem(key)
+        }
+      })
+    }
+    window.location.href = '/api/auth/signout'
+  }
 
-  // Форма профиля
   const form = useForm<ProfileInput>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      full_name: profile?.full_name || '',
-      phone: profile?.phone || '',
+      full_name: '',
+      phone: '',
+      role: 'client',
     },
   })
 
-  // Обновляем форму когда загрузится профиль
-  if (profile && !isUserLoading && !form.formState.isDirty) {
-    form.reset({
-      full_name: profile.full_name || '',
-      phone: profile.phone || '',
-    })
-  }
+  useEffect(() => {
+    const loadUserRole = async () => {
+      if (profile && user && !isUserLoading) {
+        try {
+          const response = await fetch('/api/users/me')
+          
+          if (response.ok) {
+            const userData = await response.json()
+            const userRole = (userData.role as 'client' | 'provider' | 'admin') || 'client'
+            setCurrentRole(userRole)
 
-  // Обработка загрузки аватара
+            form.reset({
+              full_name: profile.full_name || '',
+              phone: profile.phone || '',
+              role: userRole === 'admin' ? 'provider' : userRole,
+            })
+          }
+        } catch (error) {
+          console.error('Failed to load user role:', error)
+        }
+      }
+    }
+    
+    loadUserRole()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, user, isUserLoading])
+
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file || !user) return
@@ -88,60 +110,55 @@ export default function SettingsPage() {
     setSuccess(null)
 
     try {
-      // Проверяем размер файла (5MB)
       if (file.size > 5 * 1024 * 1024) {
-        setError('Файл слишком большой. Максимум 5MB')
+        setError('Максимум 5MB')
         return
       }
 
-      // Проверяем тип файла
       if (!file.type.startsWith('image/')) {
-        setError('Можно загружать только изображения')
+        setError('Только изображения')
         return
       }
 
-      // Генерируем уникальное имя файла
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('bucket', 'avatars')
 
-      // Загружаем в Storage
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true,
-        })
+      const uploadResponse = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
 
-      if (uploadError) throw uploadError
+      if (!uploadResponse.ok) {
+        throw new Error('Ошибка загрузки файла')
+      }
 
-      // Получаем публичный URL
-      const { data: publicUrlData } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName)
+      const uploadData = await uploadResponse.json()
+      const avatarUrl = uploadData.url
 
-      // Обновляем профиль в БД
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ avatar_url: publicUrlData.publicUrl })
-        .eq('id', user.id)
+      const updateResponse = await fetch('/api/users/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar_url: avatarUrl }),
+      })
 
-      if (updateError) throw updateError
+      if (!updateResponse.ok) {
+        throw new Error('Ошибка обновления аватара')
+      }
 
-      setSuccess('Аватар успешно обновлён')
+      setSuccess('Фото обновлено')
       
-      // Перезагружаем страницу для обновления аватара
       setTimeout(() => {
         window.location.reload()
       }, 1000)
     } catch (err: any) {
       console.error('Avatar upload error:', err)
-      setError(err.message || 'Ошибка загрузки аватара')
+      setError(err.message || 'Ошибка загрузки')
     } finally {
       setIsUploadingAvatar(false)
     }
   }
 
-  // Обработка обновления профиля
   const onSubmit = async (data: ProfileInput) => {
     if (!user) return
 
@@ -150,25 +167,43 @@ export default function SettingsPage() {
     setSuccess(null)
 
     try {
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          full_name: data.full_name,
-          phone: data.phone || null,
+      // Обновляем профиль
+      if (profile?.id) {
+        const profileResponse = await fetch(`/api/profiles/${profile.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            full_name: data.full_name,
+            phone: data.phone || null,
+          }),
         })
-        .eq('id', user.id)
 
-      if (updateError) throw updateError
+        if (!profileResponse.ok) {
+          throw new Error('Ошибка обновления профиля')
+        }
+      }
 
-      setSuccess('Профиль успешно обновлён')
+      // Обновляем роль пользователя
+      if (data.role && data.role !== currentRole && currentRole !== 'admin') {
+        const roleResponse = await fetch('/api/users/me', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: data.role }),
+        })
+
+        if (!roleResponse.ok) {
+          throw new Error('Ошибка обновления роли')
+        }
+      }
+
+      setSuccess('Сохранено')
       
-      // Перезагружаем для обновления данных
       setTimeout(() => {
         window.location.reload()
       }, 1000)
     } catch (err: any) {
       console.error('Profile update error:', err)
-      setError(err.message || 'Ошибка обновления профиля')
+      setError(err.message || 'Ошибка сохранения')
     } finally {
       setIsLoading(false)
     }
@@ -176,193 +211,225 @@ export default function SettingsPage() {
 
   if (isUserLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
       </div>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Настройки</h1>
-        <p className="text-muted-foreground mt-2">
-          Управление вашим профилем и настройками аккаунта
-        </p>
+    <div className="max-w-2xl mx-auto">
+      {/* Мобильный заголовок с кнопкой назад */}
+      <div className="flex items-center gap-3 mb-6 md:mb-8">
+        <Link 
+          href="/dashboard" 
+          className="md:hidden p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"
+        >
+          <ChevronLeft className="h-5 w-5 text-gray-600" />
+        </Link>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Настройки</h1>
       </div>
 
-      {/* Аватар */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Фото профиля</CardTitle>
-          <CardDescription>
-            Загрузите ваше фото. Рекомендуемый размер: 400x400px. Максимум 5MB.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-6">
-            {/* Текущий аватар */}
-            <div className="relative">
-              <div className="h-24 w-24 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={profile.full_name || 'User'}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <User className="h-12 w-12 text-slate-400" />
-                )}
-              </div>
-              
-              {/* Индикатор загрузки */}
-              {isUploadingAvatar && (
-                <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-white" />
-                </div>
+      {/* Уведомления */}
+      {error && (
+        <Alert variant="destructive" className="mb-4 rounded-2xl">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {success && (
+        <Alert className="mb-4 rounded-2xl border-green-200 bg-green-50 text-green-800">
+          <CheckCircle2 className="h-4 w-4" />
+          <AlertDescription>{success}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Профиль — аватар + имя */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 mb-4">
+        <div className="flex items-center gap-4">
+          {/* Аватар с кнопкой загрузки */}
+          <div className="relative shrink-0">
+            <div className="h-20 w-20 md:h-24 md:w-24 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
+              {profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={profile.full_name || 'User'}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <User className="h-10 w-10 text-gray-400" />
               )}
             </div>
+            
+            {/* Кнопка камеры поверх аватара */}
+            <label 
+              htmlFor="avatar-upload"
+              className="absolute bottom-0 right-0 w-8 h-8 bg-orange-500 hover:bg-orange-600 rounded-full flex items-center justify-center cursor-pointer transition-colors shadow-lg"
+            >
+              {isUploadingAvatar ? (
+                <Loader2 className="h-4 w-4 animate-spin text-white" />
+              ) : (
+                <Camera className="h-4 w-4 text-white" />
+              )}
+            </label>
+            <input
+              type="file"
+              id="avatar-upload"
+              accept="image/*"
+              onChange={handleAvatarUpload}
+              disabled={isUploadingAvatar}
+              className="hidden"
+            />
+          </div>
 
-            {/* Кнопка загрузки */}
-            <div className="flex-1">
-              <input
-                type="file"
-                id="avatar-upload"
-                accept="image/*"
-                onChange={handleAvatarUpload}
-                disabled={isUploadingAvatar}
-                className="hidden"
-              />
-              <label htmlFor="avatar-upload">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isUploadingAvatar}
-                  onClick={() => document.getElementById('avatar-upload')?.click()}
-                  asChild
-                >
-                  <span>
-                    <Camera className="mr-2 h-4 w-4" />
-                    {isUploadingAvatar ? 'Загрузка...' : 'Загрузить фото'}
-                  </span>
-                </Button>
-              </label>
-              <p className="text-xs text-muted-foreground mt-2">
-                JPG, PNG, WEBP или GIF. Максимум 5MB.
-              </p>
+          {/* Имя и email */}
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-gray-900 text-lg truncate">
+              {profile?.full_name || 'Имя не указано'}
+            </div>
+            <div className="text-sm text-gray-500 truncate">{user?.email}</div>
+            <div className="text-xs text-gray-400 mt-1">
+              {currentRole === 'admin' ? 'Администратор' : currentRole === 'provider' ? 'Исполнитель' : 'Клиент'}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* Основная информация */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Основная информация</CardTitle>
-          <CardDescription>
-            Обновите информацию о вашем профиле
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-6">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {success && (
-            <Alert className="mb-6 border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
-              <CheckCircle2 className="h-4 w-4" />
-              <AlertDescription>{success}</AlertDescription>
-            </Alert>
-          )}
-
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Email (только для чтения) */}
-              <div className="space-y-2">
-                <FormLabel>Email</FormLabel>
-                <Input
-                  type="email"
-                  value={user?.email || ''}
-                  disabled
-                  className="bg-slate-50 dark:bg-slate-900"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Email нельзя изменить
-                </p>
+      {/* Быстрые ссылки на настройки */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 mb-4">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Дополнительные настройки</h2>
+        <div className="space-y-2">
+          <Link
+            href="/settings/notifications"
+            className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center group-hover:bg-orange-200 transition-colors">
+                <Bell className="h-5 w-5 text-orange-600" />
               </div>
-
-              {/* Роль (только для чтения) */}
-              <div className="space-y-2">
-                <FormLabel>Тип аккаунта</FormLabel>
-                <Input
-                  value={
-                    profile?.role === 'parent' ? 'Родитель' :
-                    profile?.role === 'animator' ? 'Аниматор' :
-                    profile?.role === 'studio' ? 'Студия' :
-                    profile?.role === 'admin' ? 'Администратор' :
-                    'Не указано'
-                  }
-                  disabled
-                  className="bg-slate-50 dark:bg-slate-900"
-                />
+              <div>
+                <p className="font-medium text-gray-900 text-sm">Уведомления</p>
+                <p className="text-xs text-gray-500">Настройте способы получения уведомлений</p>
               </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
+          </Link>
+        </div>
+      </div>
 
-              {/* Полное имя */}
+      {/* Форма редактирования */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 mb-4">
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {/* Имя */}
+            <FormField
+              control={form.control}
+              name="full_name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-sm font-medium text-gray-700">Имя</FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="Иван Иванов" 
+                      {...field} 
+                      className="rounded-xl h-12 text-base"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Телефон */}
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-sm font-medium text-gray-700">Телефон</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="tel"
+                      placeholder="+7 900 123 45 67"
+                      {...field}
+                      className="rounded-xl h-12 text-base"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Тип аккаунта (скрыт для админа) */}
+            {currentRole !== 'admin' && (
               <FormField
                 control={form.control}
-                name="full_name"
+                name="role"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Полное имя</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Иван Иванов" {...field} />
-                    </FormControl>
+                    <FormLabel className="text-sm font-medium text-gray-700">Тип аккаунта</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={isLoading}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="rounded-xl h-12 text-base">
+                          <SelectValue placeholder="Выберите тип" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="client">Клиент</SelectItem>
+                        <SelectItem value="provider">Исполнитель</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+            )}
 
-              {/* Телефон */}
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Телефон</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="tel"
-                        placeholder="+7 900 123 45 67"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Для связи со студиями и аниматорами
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* Email — только чтение */}
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-2">Email</label>
+              <div className="flex items-center gap-3 px-4 h-12 bg-gray-50 rounded-xl text-gray-500">
+                <Mail className="h-4 w-4 shrink-0" />
+                <span className="truncate text-base">{user?.email}</span>
+              </div>
+            </div>
 
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Сохранение...
-                  </>
-                ) : (
-                  'Сохранить изменения'
-                )}
-              </Button>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+            <Button 
+              type="submit" 
+              disabled={isLoading} 
+              className="w-full rounded-xl h-12 text-base font-semibold mt-2"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Сохранение...
+                </>
+              ) : (
+                'Сохранить'
+              )}
+            </Button>
+          </form>
+        </Form>
+      </div>
+
+      {/* Кнопка выхода — внизу, заметная */}
+      <button
+        onClick={handleSignOut}
+        className="w-full flex items-center justify-center gap-2 p-4 rounded-2xl text-base font-medium text-red-600 bg-red-50 hover:bg-red-100 active:bg-red-200 transition-colors"
+      >
+        <LogOut className="h-5 w-5" />
+        Выйти
+      </button>
+
+      {/* Нижний отступ для мобильного меню */}
+      <div className="h-20 md:h-0" />
     </div>
   )
 }
 
-
+export default SettingsPage

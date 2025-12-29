@@ -1,28 +1,22 @@
 'use client'
 
-import { ReviewList } from '@/components/features/review/review-list'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Star } from 'lucide-react'
-
-interface ProfileReviewsProps {
-  profileId: string
-}
+import { Star, ThumbsUp } from 'lucide-react'
 
 /**
- * Секция отзывов профиля
+ * Блок отзывов
+ * TODO: Подключить реальные отзывы из БД
  */
-export function ProfileReviews({ profileId }: ProfileReviewsProps) {
+export function ProfileReviews({ profileId }: { profileId: string }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Star className="h-5 w-5" />
-          Отзывы
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ReviewList profileId={profileId} />
-      </CardContent>
-    </Card>
+    <div className="bg-white rounded-[32px] p-6 shadow-sm border border-slate-100">
+      <h2 className="text-2xl font-bold text-slate-900 mb-4">Отзывы</h2>
+      
+      <div className="space-y-4">
+        {/* Placeholder */}
+        <div className="text-center py-12 text-slate-500">
+          <p>Отзывы появятся здесь после первых бронирований</p>
+        </div>
+      </div>
+    </div>
   )
 }

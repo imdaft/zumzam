@@ -1,0 +1,186 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { BoardSubscriptionInput } from '@/lib/types/board-subscription'
+
+interface RouteParams {
+  params: Promise<{ id: string }>
+}
+
+/**
+ * GET /api/board-subscriptions/[id]
+ * Получение одной подписки
+ */
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Получаем подписку
+    const { data: subscription, error } = await supabase
+      .from('board_subscriptions')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single()
+
+    if (error || !subscription) {
+      return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ subscription })
+  } catch (error) {
+    logger.error('[Board Subscriptions] Unexpected error', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * PATCH /api/board-subscriptions/[id]
+ * Обновление подписки
+ */
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const body: Partial<BoardSubscriptionInput> = await request.json()
+
+    // Проверяем, что подписка принадлежит пользователю
+    const { data: existing, error: checkError } = await supabase
+      .from('board_subscriptions')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single()
+
+    if (checkError || !existing) {
+      return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
+    }
+
+    // Формируем данные для обновления
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    }
+
+    if (body.name !== undefined) updateData.name = body.name
+    if (body.filters !== undefined) updateData.filters = body.filters
+    if (body.notify_internal !== undefined) updateData.notify_internal = body.notify_internal
+    if (body.notify_email !== undefined) updateData.notify_email = body.notify_email
+    if (body.notify_telegram !== undefined) updateData.notify_telegram = body.notify_telegram
+    if (body.notify_push !== undefined) updateData.notify_push = body.notify_push
+    if (body.email_frequency !== undefined) updateData.email_frequency = body.email_frequency
+    if (body.is_active !== undefined) updateData.is_active = body.is_active
+
+    // Обновляем подписку
+    const { data: subscription, error } = await supabase
+      .from('board_subscriptions')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[Board Subscriptions] Error updating subscription', { error })
+      return NextResponse.json({ error: 'Failed to update subscription' }, { status: 500 })
+    }
+
+    logger.info('[Board Subscriptions] Subscription updated', { 
+      subscriptionId: id,
+      userId: userId 
+    })
+
+    return NextResponse.json({ subscription })
+  } catch (error) {
+    logger.error('[Board Subscriptions] Unexpected error', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE /api/board-subscriptions/[id]
+ * Удаление подписки
+ */
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Удаляем подписку (RLS проверит владельца)
+    const { error } = await supabase
+      .from('board_subscriptions')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) {
+      logger.error('[Board Subscriptions] Error deleting subscription', { error })
+      return NextResponse.json({ error: 'Failed to delete subscription' }, { status: 500 })
+    }
+
+    logger.info('[Board Subscriptions] Subscription deleted', { 
+      subscriptionId: id,
+      userId: userId 
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    logger.error('[Board Subscriptions] Unexpected error', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+

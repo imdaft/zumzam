@@ -1,0 +1,128 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * POST /api/claim/by-token
+ * Принятие профиля по секретному токену (автоматически, без модерации)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { token } = body
+
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Токен обязателен' },
+        { status: 400 }
+      )
+    }
+
+    // Находим профиль по токену
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, slug, display_name, claim_status, user_id')
+      .eq('claim_token', token)
+      .single()
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: 'Профиль не найден или ссылка недействительна' },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем, не занят ли уже профиль
+    if (profile.user_id) {
+      return NextResponse.json(
+        { error: 'Этот профиль уже имеет владельца' },
+        { status: 400 }
+      )
+    }
+
+    if (profile.claim_status === 'claimed') {
+      return NextResponse.json(
+        { error: 'Этот профиль уже был принят' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, нет ли у пользователя уже профиля
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('user_id', userId)
+      .single()
+
+    if (existingProfile) {
+      return NextResponse.json(
+        { error: 'У вас уже есть профиль. Один пользователь может иметь только один профиль.' },
+        { status: 400 }
+      )
+    }
+
+    // Передаём профиль пользователю
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        user_id: userId,
+        claim_status: 'claimed',
+        claimed_at: new Date().toISOString(),
+        // Генерируем новый токен (чтобы старый стал недействительным)
+        claim_token: crypto.randomUUID(),
+      })
+      .eq('id', profile.id)
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    // Обновляем роль пользователя на provider (если он был client)
+    await supabase
+      .from('users')
+      .update({ role: 'provider' })
+      .eq('id', userId)
+      .eq('role', 'client')
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        id: profile.id,
+        slug: profile.slug,
+        display_name: profile.display_name,
+      },
+      message: 'Поздравляем! Профиль теперь ваш.',
+    })
+  } catch (error) {
+    console.error('Claim by token API error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

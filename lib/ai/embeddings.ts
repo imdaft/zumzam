@@ -1,17 +1,51 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { MODELS } from './gemini'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+// Инициализируем лениво, чтобы не крашилось при импорте если нет ключа
+let genAI: GoogleGenerativeAI | null = null
+
+function getGenAI() {
+  if (!genAI) {
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) {
+      console.warn('GEMINI_API_KEY is not set. Embeddings will not be generated.')
+      return null
+    }
+    genAI = new GoogleGenerativeAI(apiKey)
+  }
+  return genAI
+}
+
+/**
+ * Получает базовый URL для API (для работы через прокси)
+ */
+function getBaseUrl(): string | undefined {
+  return process.env.GEMINI_API_BASE_URL
+}
 
 /**
  * Генерирует embedding для текста
  * Размерность: 768 (text-embedding-004)
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const model = genAI.getGenerativeModel({ model: MODELS.EMBEDDING })
+export async function generateEmbedding(text: string): Promise<number[] | null> {
+  try {
+    const client = getGenAI()
+    if (!client) {
+      return null // Возвращаем null, если нет клиента
+    }
 
-  const result = await model.embedContent(text)
-  return result.embedding.values
+    const model = client.getGenerativeModel({ 
+      model: MODELS.EMBEDDING 
+    }, {
+      baseUrl: getBaseUrl() // Поддержка прокси
+    })
+
+    const result = await model.embedContent(text)
+    return result.embedding.values
+  } catch (error) {
+    console.error('Error generating embedding:', error)
+    return null // Возвращаем null в случае ошибки
+  }
 }
 
 /**
@@ -41,4 +75,3 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
 }
-

@@ -1,0 +1,215 @@
+/**
+ * API для вложений к заказам
+ * GET /api/orders/[id]/attachments - получить вложения
+ * POST /api/orders/[id]/attachments - добавить вложение
+ * DELETE /api/orders/[id]/attachments/[attachmentId] - удалить вложение
+ */
+
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+type RouteParams = {
+  params: Promise<{ id: string }>
+}
+
+/**
+ * GET /api/orders/[id]/attachments - Получить все вложения заказа
+ */
+export async function GET(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    const supabase = await createClient()
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Проверка прав доступа к заказу
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, client_id, provider_id')
+      .eq('id', params.id)
+      .single()
+
+    if (orderError || !order) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем что пользователь - клиент или провайдер этого заказа
+    const isClient = order.client_id === user.id
+    const isProvider = order.provider_id === user.id
+
+    if (!isClient && !isProvider) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
+      )
+    }
+
+    // Получаем вложения
+    const { data: attachments, error } = await supabase
+      .from('order_attachments')
+      .select('*')
+      .eq('order_id', params.id)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Get attachments error:', error)
+      throw error
+    }
+
+    return NextResponse.json({ attachments: attachments || [] })
+  } catch (error: any) {
+    console.error('Get attachments error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to get attachments' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/orders/[id]/attachments - Добавить вложение
+ */
+export async function POST(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    const supabase = await createClient()
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Проверка прав доступа к заказу
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, client_id, provider_id')
+      .eq('id', params.id)
+      .single()
+
+    if (orderError || !order) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    // Определяем роль пользователя
+    const isClient = order.client_id === user.id
+    const isProvider = order.provider_id === user.id
+
+    if (!isClient && !isProvider) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
+      )
+    }
+
+    const uploaderRole = isProvider ? 'provider' : 'client'
+
+    const body = await request.json()
+    const {
+      type,
+      title,
+      description,
+      url,
+      file_name,
+      file_size,
+      mime_type,
+      promo_code,
+      promo_expires_at,
+    } = body
+
+    // Валидация
+    if (!type || !title) {
+      return NextResponse.json(
+        { error: 'Type and title are required' },
+        { status: 400 }
+      )
+    }
+
+    // Создаём вложение
+    const { data: attachment, error } = await supabase
+      .from('order_attachments')
+      .insert({
+        order_id: params.id,
+        uploaded_by: user.id,
+        uploader_role: uploaderRole,
+        type,
+        title,
+        description,
+        url,
+        file_name,
+        file_size,
+        mime_type,
+        promo_code,
+        promo_expires_at,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Create attachment error:', error)
+      throw error
+    }
+
+    return NextResponse.json({ attachment }, { status: 201 })
+  } catch (error: any) {
+    console.error('Create attachment error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to create attachment' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/orders/[id]/attachments - Удалить вложение
+ */
+export async function DELETE(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    const { searchParams } = new URL(request.url)
+    const attachmentId = searchParams.get('attachment_id')
+
+    if (!attachmentId) {
+      return NextResponse.json(
+        { error: 'Attachment ID is required' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Удаляем вложение (RLS проверит что пользователь - владелец)
+    const { error } = await supabase
+      .from('order_attachments')
+      .delete()
+      .eq('id', attachmentId)
+      .eq('uploaded_by', user.id)
+
+    if (error) {
+      console.error('Delete attachment error:', error)
+      throw error
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Delete attachment error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to delete attachment' },
+      { status: 500 }
+    )
+  }
+}
+

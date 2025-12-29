@@ -1,0 +1,396 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * GET /api/admin/advertising/campaigns
+ * Получение всех рекламных кампаний (только для админов)
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Проверяем права администратора
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Доступ запрещён' },
+        { status: 403 }
+      )
+    }
+
+    // Получаем ВСЕ кампании (без фильтра по user_id)
+    const { data: campaigns, error } = await supabase
+      .from('ad_campaigns')
+      .select(`
+        *,
+        profile:profiles(id, display_name, slug, email),
+        bookings:ad_bookings(
+          id,
+          start_date,
+          end_date,
+          status,
+          total_cost,
+          ad_slot:ad_slots(id, name, slug, price_per_day)
+        )
+      `)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[Admin Advertising API] Error fetching campaigns:', error)
+      return NextResponse.json(
+        { error: 'Ошибка загрузки кампаний', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    // Статистика уже в поле stats (jsonb)
+    const campaignsWithStats = campaigns.map((campaign) => {
+      // Если stats нет или пустой, возвращаем нули
+      const stats = campaign.stats || {}
+      return {
+        ...campaign,
+        stats: {
+          impressions: stats.impressions || 0,
+          clicks: stats.clicks || 0,
+          conversions: stats.conversions || 0,
+          spent: stats.spent || 0,
+        }
+      }
+    })
+
+    return NextResponse.json({ campaigns: campaignsWithStats })
+  } catch (error) {
+    console.error('[Admin Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/admin/advertising/campaigns
+ * Создание новой рекламной кампании администратором
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Проверяем права администратора
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Доступ запрещён' },
+        { status: 403 }
+      )
+    }
+
+    const body = await request.json()
+    const { title, description, image_url, link_url, start_date, end_date, profile_id, display_order, is_system } = body
+
+    if (!title || !image_url || !link_url || !start_date || !end_date) {
+      return NextResponse.json(
+        { error: 'Отсутствуют обязательные поля' },
+        { status: 400 }
+      )
+    }
+
+    // Создаем кампанию
+    const { data, error } = await supabase
+      .from('ad_campaigns')
+      .insert({
+        user_id: is_system ? null : user.id, // Для системных баннеров user_id = null
+        profile_id: is_system ? null : (profile_id || null),
+        title,
+        description: description || null,
+        image_url,
+        link_url,
+        start_date,
+        end_date,
+        status: 'active',
+        moderation_status: 'approved', // Админские кампании автоматически одобрены
+        moderated_by: user.id,
+        moderated_at: new Date().toISOString(),
+        metadata: { 
+          display_order: display_order || 0,
+          is_system: is_system || false
+        }
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[Admin Advertising API] Error creating campaign:', error)
+      return NextResponse.json(
+        { error: 'Ошибка создания кампании', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    // Для системных баннеров автоматически создаем бронирование
+    if (is_system && data?.id) {
+      console.log('[Admin Advertising API] Creating booking for system banner:', data.id)
+      
+      // Находим слот home_carousel
+      const { data: slot } = await supabase
+        .from('ad_slots')
+        .select('id')
+        .eq('slug', 'home_carousel')
+        .single()
+      
+      if (slot) {
+        const { error: bookingError } = await supabase
+          .from('ad_bookings')
+          .insert({
+            campaign_id: data.id,
+            ad_slot_id: slot.id,
+            start_date,
+            end_date,
+            total_cost: 0,
+            status: 'active'
+          })
+        
+        if (bookingError) {
+          console.error('[Admin Advertising API] Error creating booking:', bookingError)
+        } else {
+          console.log('[Admin Advertising API] ✅ Booking created for system banner')
+        }
+      }
+    }
+
+    return NextResponse.json({ campaign: data })
+  } catch (error) {
+    console.error('[Admin Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/admin/advertising/campaigns
+ * Обновление кампании (полное редактирование или только модерация)
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Проверяем права администратора
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Доступ запрещён' },
+        { status: 403 }
+      )
+    }
+
+    const body = await request.json()
+    const { campaignId, ...updates } = body
+
+    if (!campaignId) {
+      return NextResponse.json(
+        { error: 'Отсутствует ID кампании' },
+        { status: 400 }
+      )
+    }
+
+    // Подготавливаем обновления
+    const updateData: any = {}
+    
+    // Основные поля
+    if (updates.title !== undefined) updateData.title = updates.title
+    if (updates.description !== undefined) updateData.description = updates.description
+    if (updates.image_url !== undefined) updateData.image_url = updates.image_url
+    if (updates.link_url !== undefined) updateData.link_url = updates.link_url
+    if (updates.start_date !== undefined) updateData.start_date = updates.start_date
+    if (updates.end_date !== undefined) updateData.end_date = updates.end_date
+    if (updates.status !== undefined) updateData.status = updates.status
+    
+    // Системный баннер
+    if (updates.is_system !== undefined) {
+      if (updates.is_system) {
+        // Для системных баннеров убираем user_id и profile_id
+        updateData.user_id = null
+        updateData.profile_id = null
+      } else if (updates.profile_id !== undefined) {
+        updateData.profile_id = updates.profile_id
+      }
+    } else if (updates.profile_id !== undefined) {
+      updateData.profile_id = updates.profile_id
+    }
+    
+    // Модерация
+    if (updates.moderationStatus !== undefined) {
+      updateData.moderation_status = updates.moderationStatus
+      updateData.moderation_notes = updates.moderationNotes || null
+      updateData.moderated_at = new Date().toISOString()
+      updateData.moderated_by = user.id
+    }
+
+    // Приоритет показа и системный флаг (через metadata)
+    if (updates.display_order !== undefined || updates.is_system !== undefined) {
+      // Получаем текущие метаданные
+      const { data: current } = await supabase
+        .from('ad_campaigns')
+        .select('metadata')
+        .eq('id', campaignId)
+        .single()
+      
+      updateData.metadata = {
+        ...(current?.metadata || {}),
+      }
+      
+      if (updates.display_order !== undefined) {
+        updateData.metadata.display_order = updates.display_order
+      }
+      
+      if (updates.is_system !== undefined) {
+        updateData.metadata.is_system = updates.is_system
+      }
+    }
+
+    // Обновляем кампанию
+    const { data, error } = await supabase
+      .from('ad_campaigns')
+      .update(updateData)
+      .eq('id', campaignId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[Admin Advertising API] Error updating campaign:', error)
+      return NextResponse.json(
+        { error: 'Ошибка обновления кампании', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ campaign: data })
+  } catch (error) {
+    console.error('[Admin Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/admin/advertising/campaigns
+ * Удаление кампании
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Проверяем права администратора
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Доступ запрещён' },
+        { status: 403 }
+      )
+    }
+
+    const { campaignId } = await request.json()
+
+    if (!campaignId) {
+      return NextResponse.json(
+        { error: 'Отсутствует ID кампании' },
+        { status: 400 }
+      )
+    }
+
+    const { error } = await supabase
+      .from('ad_campaigns')
+      .delete()
+      .eq('id', campaignId)
+
+    if (error) {
+      console.error('[Admin Advertising API] Error deleting campaign:', error)
+      return NextResponse.json(
+        { error: 'Ошибка удаления кампании', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[Admin Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+

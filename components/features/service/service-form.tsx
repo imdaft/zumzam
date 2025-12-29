@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { 
   Loader2, 
@@ -55,10 +54,6 @@ export function ServiceForm() {
   const [priceType, setPriceType] = useState<'fixed' | 'range'>('fixed')
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([])
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
 
   const form = useForm<ServiceInput>({
     resolver: zodResolver(serviceSchema),
@@ -100,23 +95,21 @@ export function ServiceForm() {
           throw new Error(`${file.name} - не изображение`)
         }
 
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('bucket', 'portfolio')
 
-        const { error: uploadError } = await supabase.storage
-          .from('portfolio')
-          .upload(fileName, file, {
-            cacheControl: '3600',
-            upsert: false,
-          })
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
 
-        if (uploadError) throw uploadError
+        if (!response.ok) {
+          throw new Error('Ошибка загрузки файла')
+        }
 
-        const { data: publicUrlData } = supabase.storage
-          .from('portfolio')
-          .getPublicUrl(fileName)
-
-        uploadedUrls.push(publicUrlData.publicUrl)
+        const uploadData = await response.json()
+        uploadedUrls.push(uploadData.url)
       }
 
       setUploadedPhotos([...uploadedPhotos, ...uploadedUrls])

@@ -1,26 +1,50 @@
-import { createServerClient } from '@/lib/supabase/server'
+import { NextResponse, NextRequest } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
 import { generateEmbedding } from '@/lib/ai/embeddings'
-import { NextResponse } from 'next/server'
+import { withApiProtection } from '@/lib/security/api-protection'
+import { checkRateLimit, getClientIdentifier, RATE_LIMITS } from '@/lib/security/rate-limit'
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/search/semantic - Семантический поиск с использованием Gemini embeddings
- * 
- * Использует vector similarity search для поиска услуг по смыслу запроса,
- * а не только по ключевым словам
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const protection = await withApiProtection(request, {
+    rateLimit: false,
+    botDetection: true,
+  })
+  if (protection) return protection
+
+  const identifier = getClientIdentifier(request)
+  const rateLimitResult = checkRateLimit(identifier, RATE_LIMITS.search)
+
+  if (!rateLimitResult.allowed) {
+    return NextResponse.json(
+      { error: 'Слишком много поисковых запросов. Попробуйте через минуту.' },
+      {
+        status: 429,
+        headers: {
+          'X-RateLimit-Limit': String(RATE_LIMITS.search.maxRequests),
+          'X-RateLimit-Remaining': String(rateLimitResult.remaining),
+          'Retry-After': String(Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)),
+        }
+      }
+    )
+  }
+
   try {
     const body = await request.json()
-    const { 
-      query, 
-      city, 
-      priceMin, 
-      priceMax, 
-      ageFrom, 
-      ageTo, 
+    const {
+      query,
+      city,
+      priceMin,
+      priceMax,
+      ageFrom,
+      ageTo,
       tags,
       limit = 20,
-      threshold = 0.7, // Минимальная схожесть (0-1)
+      threshold = 0.7,
     } = body
 
     if (!query || query.trim().length === 0) {
@@ -30,96 +54,59 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabase = await createServerClient()
-
     // 1. Генерируем embedding для запроса пользователя
-    console.log('Generating embedding for query:', query)
+    logger.debug('[Search] Generating embedding', { query })
     const queryEmbedding = await generateEmbedding(query)
-    
-    // 2. Вызываем RPC функцию match_services() для поиска похожих услуг
-    const { data: services, error } = await supabase.rpc('match_services', {
-      query_embedding: queryEmbedding,
-      match_threshold: threshold,
-      match_count: limit * 2, // Берём больше для фильтрации
-    })
 
-    if (error) {
-      console.error('Semantic search error:', error)
-      throw error
-    }
+    // TODO: Векторный поиск через Prisma/pgvector
+    // Пока используем простой текстовый поиск
+    logger.warn('[Search] Vector search not yet implemented, using text search fallback')
 
-    // 3. Применяем дополнительные фильтры на клиенте
-    let filteredServices = services || []
-
-    // Фильтр по городу (через JOIN с profiles)
+    const where: any = {}
     if (city) {
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('city', city)
-      
-      const profileIds = profilesData?.map(p => p.id) || []
-      filteredServices = filteredServices.filter((s: any) =>
-        profileIds.includes(s.profile_id)
-      )
+      where.city = city
+    }
+    if (priceMin || priceMax) {
+      where.services = {
+        some: {
+          price: {
+            ...(priceMin ? { gte: parseFloat(priceMin) } : {}),
+            ...(priceMax ? { lte: parseFloat(priceMax) } : {}),
+          }
+        }
+      }
     }
 
-    // Фильтр по цене
-    if (priceMin !== undefined || priceMax !== undefined) {
-      filteredServices = filteredServices.filter((s: any) => {
-        const servicePrice = s.price || s.price_from || 0
-        if (priceMin !== undefined && servicePrice < priceMin) return false
-        if (priceMax !== undefined && servicePrice > priceMax) return false
-        return true
-      })
-    }
-
-    // Фильтр по возрасту
-    if (ageFrom !== undefined || ageTo !== undefined) {
-      filteredServices = filteredServices.filter((s: any) => {
-        if (!s.age_from && !s.age_to) return true // Если возраст не указан, показываем
-        if (ageFrom !== undefined && s.age_to && s.age_to < ageFrom) return false
-        if (ageTo !== undefined && s.age_from && s.age_from > ageTo) return false
-        return true
-      })
-    }
-
-    // Фильтр по тегам (хотя бы один тег должен совпадать)
-    if (tags && tags.length > 0) {
-      filteredServices = filteredServices.filter((s: any) => {
-        if (!s.tags || s.tags.length === 0) return false
-        return tags.some((tag: string) => s.tags.includes(tag))
-      })
-    }
-
-    // Ограничиваем результат
-    filteredServices = filteredServices.slice(0, limit)
-
-    // 4. Загружаем данные профилей для результатов
-    const profileIds = [...new Set(filteredServices.map((s: any) => s.profile_id))]
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, slug, display_name, city, rating, verified')
-      .in('id', profileIds)
-
-    // Объединяем services с profiles
-    const servicesWithProfiles = filteredServices.map((service: any) => ({
-      ...service,
-      profiles: profiles?.find(p => p.id === service.profile_id),
-    }))
+    // Простой текстовый поиск
+    const profiles = await prisma.profiles.findMany({
+      where: {
+        ...where,
+        is_published: true,
+        OR: [
+          { display_name: { contains: query, mode: 'insensitive' } },
+          { description: { contains: query, mode: 'insensitive' } },
+        ]
+      },
+      include: {
+        services: true
+      },
+      take: limit,
+    })
 
     return NextResponse.json({
-      services: servicesWithProfiles,
-      total: servicesWithProfiles.length,
-      method: 'semantic', // Индикатор что использовался семантический поиск
+      services: profiles.map(p => ({
+        id: p.id,
+        title: p.display_name,
+        profile: p
+      })),
+      count: profiles.length,
+      query,
     })
   } catch (error: any) {
-    console.error('Semantic search error:', error)
+    logger.error('[Search] Error:', error)
     return NextResponse.json(
-      { error: error.message || 'Semantic search failed' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
-
-

@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * POST /api/advertising/bookings
+ * Создание бронирования рекламного слота
+ */
+export async function POST(request: NextRequest) {
+  try {
+    console.log('[Bookings API] 🚀 POST request received')
+    const supabase = await createClient()
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      console.log('[Bookings API] ❌ Auth error:', authError)
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    console.log('[Bookings API] ✅ User authenticated:', user.id)
+
+    const body = await request.json()
+    console.log('[Bookings API] 📦 Request body:', body)
+
+    const {
+      campaign_id,
+      ad_slot_id,
+      start_date,
+      end_date,
+      total_cost,
+      status = 'pending'
+    } = body
+
+    // Валидация
+    if (!campaign_id || !ad_slot_id || !start_date || !end_date || !total_cost) {
+      console.log('[Bookings API] ❌ Validation failed')
+      return NextResponse.json(
+        { error: 'Не все обязательные поля заполнены' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, что кампания принадлежит пользователю
+    const { data: campaign } = await supabase
+      .from('ad_campaigns')
+      .select('user_id')
+      .eq('id', campaign_id)
+      .single()
+
+    if (!campaign || campaign.user_id !== user.id) {
+      console.log('[Bookings API] ❌ Campaign not found or access denied')
+      return NextResponse.json(
+        { error: 'Кампания не найдена или доступ запрещен' },
+        { status: 403 }
+      )
+    }
+
+    console.log('[Bookings API] 💾 Inserting booking into DB...')
+
+    // Создаем бронирование
+    const { data: booking, error } = await supabase
+      .from('ad_bookings')
+      .insert({
+        campaign_id,
+        ad_slot_id,
+        start_date,
+        end_date,
+        total_cost,
+        status
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[Bookings API] ❌ DB Error creating booking:', error)
+      return NextResponse.json(
+        { error: 'Ошибка создания бронирования', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    console.log('[Bookings API] ✅ Booking created successfully:', booking.id)
+    return NextResponse.json({ booking }, { status: 201 })
+  } catch (error: any) {
+    console.error('[Bookings API] ❌ Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера', details: error?.message },
+      { status: 500 }
+    )
+  }
+}
+
+

@@ -1,0 +1,568 @@
+'use client'
+
+import { useState, useEffect, useMemo } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { CategorySelectionStep } from './category-selection-step'
+import { SubtypeSelectionStep } from './subtype-selection-step'
+import { WizardBasicInfo } from './wizard-steps/basic-info'
+import { WizardVisuals } from './wizard-steps/visuals'
+import { WizardCharacteristics } from './wizard-steps/characteristics'
+import { WizardMedia } from './wizard-steps/media'
+import { WizardBranches } from './wizard-steps/branches'
+import { WizardContacts } from './wizard-steps/contacts'
+import { WizardFAQ } from './wizard-steps/faq'
+import { WizardSocial } from './wizard-steps/social'
+import { WizardReviews } from './wizard-steps/reviews'
+import { WizardFinalCheck } from './wizard-steps/final-check'
+import { WizardProgress } from './wizard-progress'
+import { DraftContinueDialog } from './draft-continue-dialog'
+import { ChevronLeft, Check, CloudOff } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useProfileDrafts, type ProfileDraft } from '@/hooks/use-profile-drafts'
+import { categoryHasSubtypes, type ProfileCategory } from '@/lib/constants/profile-categories'
+
+type ProfileData = {
+  category: ProfileCategory
+  display_name: string
+  bio: string
+  city: string
+  address: string
+  geo_location: [number, number] | null
+  logo: string | null
+  cover_photo: string | null
+  details: {
+    subtype?: string
+    venue_type?: string
+    capacity_max?: number
+    area_sqm?: number
+    amenities?: Record<string, boolean>
+    rules?: Record<string, boolean>
+    age_groups?: string[]
+    interior_style?: string
+    decor?: Record<string, boolean>
+  }
+  photos: string[]
+  videos: string[]
+  // Новые поля
+  services?: Array<{
+    id: string
+    name: string
+    description: string
+    price: string
+    duration?: string
+  }>
+  branches?: Array<{
+    id: string
+    name: string
+    address: string
+    phone: string
+    isMain: boolean
+  }>
+  phone?: string
+  additional_phone?: string
+  email?: string
+  website?: string
+  faq?: Array<{
+    id: string
+    question: string
+    answer: string
+  }>
+  social_links?: {
+    vk?: string
+    instagram?: string
+    tiktok?: string
+    telegram?: string
+    youtube?: string
+  }
+  yandex_maps_url?: string
+  dgis_url?: string
+  is_published?: boolean
+}
+
+export function CreateProfileWizard() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const draftId = searchParams.get('draft') // Продолжение черновика
+  
+  const { saveDraft, getDraft, deleteDraft } = useProfileDrafts()
+  
+  const [step, setStep] = useState(1)
+  const [profileData, setProfileData] = useState<Partial<ProfileData>>({})
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [showDraftDialog, setShowDraftDialog] = useState(false)
+
+  // Обработчики для диалога продолжения черновика
+  const handleContinueDraft = (draft: ProfileDraft) => {
+    setProfileData(draft.data)
+    setStep(draft.currentStep)
+    setCurrentDraftId(draft.id)
+    setShowDraftDialog(false)
+  }
+
+  const handleStartNew = () => {
+    // Создаём новый ID черновика
+    setCurrentDraftId(`draft-${Date.now()}`)
+    setShowDraftDialog(false)
+  }
+
+  // Динамическое определение общего числа шагов (мемоизация)
+  const totalSteps = useMemo(() => {
+    // Базовые шаги:
+    // 1. Категория
+    // 2. [Подтип - если есть]
+    // 3. Основное
+    // 4. Визуал
+    // 5. Характеристики
+    // 6. Медиа
+    // 7. Филиалы
+    // 8. Контакты
+    // 9. FAQ
+    // 10. Соцсети
+    // 11. Отзывы
+    // 12. Финальный чек
+    
+    let total = 11 // Базовые шаги без подтипа и без услуг
+    
+    // Если у категории есть подтипы, добавляем +1 шаг (выбор подтипа после категории)
+    if (profileData.category && categoryHasSubtypes(profileData.category)) {
+      total += 1
+    }
+    
+    return total
+  }, [profileData.category])
+
+  // Получить названия шагов для индикатора прогресса
+  const getStepLabels = (): string[] => {
+    const hasSubtypes = profileData.category && categoryHasSubtypes(profileData.category)
+    
+    if (hasSubtypes) {
+      return [
+        'Категория',
+        'Подтип',
+        'Основное',
+        'Визуал',
+        'Характеристики',
+        'Медиа',
+        'Филиалы',
+        'Контакты',
+        'FAQ',
+        'Соцсети',
+        'Отзывы',
+        'Готовность'
+      ]
+    }
+    
+    return [
+      'Категория',
+      'Основное',
+      'Визуал',
+      'Характеристики',
+      'Медиа',
+      'Филиалы',
+      'Контакты',
+      'FAQ',
+      'Соцсети',
+      'Отзывы',
+      'Готовность'
+    ]
+  }
+
+  // Загрузить черновик при монтировании
+  useEffect(() => {
+    if (draftId) {
+      const draft = getDraft(draftId)
+      if (draft) {
+        setProfileData(draft.data)
+        setStep(draft.currentStep)
+        setCurrentDraftId(draft.id)
+      }
+    } else {
+      // Создаём новый ID черновика
+      setCurrentDraftId(`draft-${Date.now()}`)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftId]) // Только draftId, getDraft стабилен благодаря useCallback
+
+  // Автосохранение на каждом изменении шага или данных
+  useEffect(() => {
+    if (!currentDraftId || !profileData.category) return
+    
+    setIsSaving(true)
+    const draftToSave = {
+      id: currentDraftId,
+      category: profileData.category,
+      display_name: profileData.display_name || 'Новый профиль',
+      currentStep: step,
+      totalSteps: totalSteps,
+      data: profileData,
+      createdAt: Date.now(), // Будет перезаписано если уже существует
+    }
+
+    saveDraft(draftToSave)
+    setLastSaved(new Date())
+    
+    // Задержка для показа анимации сохранения
+    const timer = setTimeout(() => {
+      setIsSaving(false)
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [step, profileData, currentDraftId, saveDraft, totalSteps])
+
+  const handleBack = () => {
+    if (step === 1) {
+      router.push('/profiles')
+    } else {
+      setStep(step - 1)
+    }
+  }
+
+  const handleNext = (data: Partial<ProfileData>) => {
+    setProfileData({ ...profileData, ...data })
+    if (step < totalSteps) {
+      setStep(step + 1)
+    }
+  }
+
+  const handleSkip = () => {
+    if (step < totalSteps) {
+      setStep(step + 1)
+    }
+  }
+
+  const handleStepClick = (targetStep: number) => {
+    // Позволяем переходить только на уже пройденные или текущий шаг
+    if (targetStep <= step) {
+      setStep(targetStep)
+    }
+  }
+
+  const handleFinish = async (data: Partial<ProfileData>) => {
+    const finalData = { ...profileData, ...data }
+    
+    console.log('[CreateProfileWizard] Начало создания профиля')
+    console.log('[CreateProfileWizard] finalData:', finalData)
+    
+    // Проверка обязательных полей
+    if (!finalData.category) {
+      alert('Ошибка: не выбрана категория профиля')
+      return
+    }
+    if (!finalData.display_name) {
+      alert('Ошибка: не указано название профиля')
+      return
+    }
+    if (!finalData.city) {
+      alert('Ошибка: не указан город')
+      return
+    }
+    
+    // Генерируем slug из названия (транслитерация)
+    const translitMap: Record<string, string> = {
+      'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+      'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+      'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+      'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+      'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+    }
+    
+    const transliterate = (text: string) => {
+      return text
+        .toLowerCase()
+        .split('')
+        .map(char => translitMap[char] || char)
+        .join('')
+    }
+    
+    const slug = transliterate(finalData.display_name)
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      || `profile-${Date.now()}`
+    
+    // Формируем данные для API
+    const profilePayload = {
+      category: finalData.category,
+      display_name: finalData.display_name,
+      slug: slug,
+      bio: finalData.bio || '',
+      description: finalData.bio || '', // Используем bio как начальное описание
+      city: finalData.city,
+      address: finalData.address || '',
+      tags: [], // Добавляем пустой массив тегов
+      price_range: '$$' as const,
+      email: finalData.email || '', // Новое
+      phone: finalData.phone || '', // Новое
+      website: finalData.website || '', // Новое
+      social_links: finalData.social_links || {
+        vk: '',
+        instagram: '',
+        tiktok: '',
+        telegram: '',
+        youtube: '',
+      },
+      portfolio_url: '',
+      cover_photo: finalData.cover_photo || null,
+      logo: finalData.logo || null,
+      photos: finalData.photos || [],
+      videos: finalData.videos || [],
+      details: finalData.details || {},
+      locations: [
+        {
+          city: finalData.city,
+          address: finalData.address || null,
+          geo_location: finalData.geo_location || null,
+          is_main: true,
+          active: true,
+          details: finalData.details || {},
+        }
+      ],
+      faq: finalData.faq || [], // Новое
+      is_published: finalData.is_published || false, // Новое
+      // Дополнительные поля для будущего расширения
+      services: finalData.services || [],
+      branches: finalData.branches || [],
+      additional_phone: finalData.additional_phone || '',
+      yandex_maps_url: finalData.yandex_maps_url || '',
+      dgis_url: finalData.dgis_url || '',
+    }
+    
+    console.log('[CreateProfileWizard] Payload для отправки:', JSON.stringify(profilePayload, null, 2))
+    
+    try {
+      const response = await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profilePayload),
+      })
+
+      console.log('[CreateProfileWizard] Response status:', response.status)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.log('[CreateProfileWizard] Error data:', errorData)
+        throw new Error(errorData.error || `Ошибка сервера: ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log('[CreateProfileWizard] Success! Profile slug:', result.profile?.slug)
+      
+      // Удаляем черновик после успешного создания
+      if (currentDraftId) {
+        deleteDraft(currentDraftId)
+      }
+      
+      // Редирект на страницу редактирования с виджетом готовности
+      router.push(`/profiles/${result.profile.slug}/edit`)
+      router.refresh()
+    } catch (error: any) {
+      console.log('[CreateProfileWizard] Caught error:', error)
+      alert(error.message || 'Не удалось создать профиль. Попробуйте ещё раз.')
+      throw error // Re-throw для отладки
+    }
+  }
+
+  return (
+    <>
+      {/* Диалог продолжения черновика - не показываем если draftId в URL или если установлен флаг пропуска */}
+      {!draftId && (
+        <DraftContinueDialog
+          onContinue={handleContinueDraft}
+          onStartNew={handleStartNew}
+        />
+      )}
+
+      <div className="min-h-screen bg-[#F7F8FA] flex flex-col">
+      {/* Header с прогрессом */}
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+              <span className="text-sm font-medium">Назад</span>
+            </button>
+            
+            <div className="flex items-center gap-3">
+              {/* Индикатор автосохранения */}
+              {lastSaved && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                  {isSaving ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                      <span>Сохранение...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-green-600" />
+                      <span>Сохранено</span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Индикатор прогресса */}
+          <WizardProgress 
+            currentStep={step} 
+            totalSteps={totalSteps}
+            stepLabels={getStepLabels()}
+            onStepClick={handleStepClick}
+          />
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto pb-20 lg:pb-0">
+        {/* Шаг 1: Выбор категории */}
+        {step === 1 && (
+          <div className="max-w-2xl mx-auto px-4 py-6">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Выберите тип профиля</h1>
+            <p className="text-gray-500 mb-6">Это определит доступные функции и настройки</p>
+            <CategorySelectionStep
+              selectedCategory={profileData.category}
+              onSelect={(category) => handleNext({ category })}
+            />
+          </div>
+        )}
+
+        {/* Шаг 2: Выбор подтипа (если есть) */}
+        {step === 2 && profileData.category && categoryHasSubtypes(profileData.category) && (
+          <SubtypeSelectionStep
+            category={profileData.category}
+            selectedSubtype={profileData.details?.subtype || null}
+            onSelect={(subtype) => {
+              setProfileData({
+                ...profileData,
+                details: { ...profileData.details, subtype }
+              })
+            }}
+            onNext={() => setStep(step + 1)}
+          />
+        )}
+
+        {/* Далее: Основная информация, визуал, характеристики, медиа */}
+        {/* Если у категории нет подтипов, шаг 2 = BasicInfo. Если есть, шаг 3 = BasicInfo */}
+        {(
+          (step === 2 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 3 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardBasicInfo
+            data={profileData}
+            onNext={handleNext}
+          />
+        )}
+
+        {(
+          (step === 3 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 4 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardVisuals
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {(
+          (step === 4 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 5 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardCharacteristics
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {(
+          (step === 5 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 6 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardMedia
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {/* Шаг: Филиалы */}
+        {(
+          (step === 6 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 7 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardBranches
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {/* Шаг: Контакты */}
+        {(
+          (step === 7 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 8 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardContacts
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {/* Шаг: FAQ */}
+        {(
+          (step === 8 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 9 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardFAQ
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {/* Шаг: Соцсети */}
+        {(
+          (step === 9 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 10 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardSocial
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {/* Шаг: Настройки отзывов */}
+        {(
+          (step === 10 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 11 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardReviews
+            data={profileData}
+            onNext={handleNext}
+            onSkip={handleSkip}
+          />
+        )}
+
+        {/* Финальный шаг: Чеклист готовности */}
+        {(
+          (step === 11 && profileData.category && !categoryHasSubtypes(profileData.category)) ||
+          (step === 12 && profileData.category && categoryHasSubtypes(profileData.category))
+        ) && (
+          <WizardFinalCheck
+            data={profileData}
+            onFinish={handleFinish}
+          />
+        )}
+      </div>
+    </div>
+    </>
+  )
+}
+

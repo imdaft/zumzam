@@ -1,0 +1,1366 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { addToCart, removeFromCart, showCart, clearCart } from '@/lib/ai/cart-utils'
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+
+const DEFAULT_CITY = 'Санкт-Петербург'
+const CURRENT_YEAR = new Date().getFullYear()
+const REQUIRED_FIELDS = [
+  'category',
+  'eventDate',
+  'eventTime',
+  'city_or_address',
+  'venueType',
+  'budget_or_negotiable',
+  'clientType',
+  'contactPhone',
+] as const
+
+type DraftType = {
+  category?: string
+  title?: string
+  description?: string
+  eventDate?: string
+  eventTime?: string
+  city?: string
+  district?: string
+  address?: string
+  venueType?: string
+  budget?: number
+  budgetNegotiable?: boolean
+  clientType?: string
+  childrenCount?: number
+  childrenAgeRange?: { from?: number; to?: number }
+  birthdayChild?: { name?: string; age?: number }
+  contactName?: string
+  contactPhone?: string
+  contactMethod?: string
+  preferredContactTime?: string
+  details?: Record<string, unknown>
+}
+
+function buildDraftPrompt(userText: string) {
+  return `Ты — ассистент, который превращает свободный русский текст пользователя в структурированные данные заявки на услугу для детского мероприятия.
+
+Вход: один абзац с деталями (дата, время, возраст ребёнка, бюджет, адрес, формат).
+Надо извлечь поля и вернуть СТРОГО JSON без пояснений.
+
+Поле category выбери из: animator, show, quest, masterclass, host, photo_video, santa, face_painting, costume, other.
+Поле venueType выбери из: home, restaurant, kids_center, club, outdoor, school, office, other.
+
+Формат ответа:
+{
+  "category": "show",
+  "title": "Фокусник на день рождения",
+  "description": "Короткое описание без воды",
+  "eventDate": "2025-12-25",
+  "eventTime": "17:00",
+  "city": "Санкт-Петербург",
+  "district": "Приморский",
+  "address": "Ресторан Рыба на даче",
+  "venueType": "restaurant",
+  "budget": 15000,
+  "budgetNegotiable": false,
+  "childrenCount": 10,
+  "childrenAgeRange": { "from": 10, "to": 10 },
+  "birthdayChild": { "name": "Игорь", "age": 10 },
+  "contactName": "Имя заказчика если указано",
+  "contactPhone": "+7...",
+  "details": { "keywords": ["фокусы", "выезд за город"] }
+}
+
+Требования:
+- Дата в формате YYYY-MM-DD, время HH:MM (24h), если нет — оставь пустым.
+- Бюджет числом (без валюты и слов).
+- Если город не указан, поставь "${DEFAULT_CITY}".
+- Не добавляй лишних полей. Только JSON.`
+}
+
+function safeParseDraft(text: string | null): DraftType | null {
+  if (!text) return null
+  try {
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start === -1 || end === -1) return null
+    const jsonText = text.slice(start, end + 1)
+    return JSON.parse(jsonText) as DraftType
+  } catch (error) {
+    console.error('[AI Chat Draft] parse error', error)
+    return null
+  }
+}
+
+function normalizeDraft(draft: DraftType): DraftType {
+  return {
+    category: draft.category || 'show',
+    title: draft.title || 'Заявка на праздник',
+    description: draft.description,
+    eventDate: draft.eventDate,
+    eventTime: draft.eventTime,
+    city: draft.city || DEFAULT_CITY,
+    district: draft.district,
+    address: draft.address,
+    venueType: draft.venueType || 'home',
+    clientType: draft.clientType || 'parent',
+    contactMethod: draft.contactMethod || 'chat',
+    preferredContactTime: draft.preferredContactTime || 'any',
+    budget: typeof draft.budget === 'number' ? draft.budget : undefined,
+    budgetNegotiable: draft.budgetNegotiable ?? false,
+    childrenCount: draft.childrenCount,
+    childrenAgeRange: draft.childrenAgeRange,
+    birthdayChild: draft.birthdayChild,
+    contactName: draft.contactName,
+    contactPhone: draft.contactPhone,
+    details: draft.details || {},
+  }
+}
+
+function missingFields(draft: DraftType) {
+  const missing: string[] = []
+  if (!draft.eventDate) missing.push('дату')
+  if (!draft.eventTime) missing.push('время')
+  if (!draft.address && !draft.city) missing.push('адрес/город')
+  if (!draft.category) missing.push('категорию')
+  if (!draft.budget && !draft.budgetNegotiable) missing.push('бюджет')
+  if (!draft.venueType) missing.push('тип площадки')
+  if (!draft.clientType) missing.push('кто вы (родитель/организатор/площадка)')
+  return missing
+}
+
+function optionalMissing(draft: DraftType) {
+  const missing: string[] = []
+  if (!draft.childrenCount && !draft.childrenAgeRange) missing.push('возраст/кол-во детей')
+  if (!draft.description) missing.push('краткое описание программы')
+  if (!draft.contactPhone) missing.push('телефон для связи')
+  return missing
+}
+
+function makeSummary(draft: DraftType) {
+  const parts = [
+    draft.eventDate ? `📅 ${draft.eventDate}` : null,
+    draft.eventTime ? `⏰ ${draft.eventTime}` : null,
+    draft.city ? `📍 ${draft.city}${draft.address ? ', ' + draft.address : ''}` : draft.address ? `📍 ${draft.address}` : null,
+    draft.budget ? `💰 ${draft.budget.toLocaleString('ru-RU')} ₽` : draft.budgetNegotiable ? '💰 Договорная' : null,
+    draft.category ? `🧩 ${draft.category}` : null,
+  ].filter(Boolean)
+  return parts.join(' • ')
+}
+
+function encodePrefill(draft: DraftType) {
+  try {
+    return Buffer.from(JSON.stringify(draft), 'utf-8').toString('base64url')
+  } catch {
+    return null
+  }
+}
+
+function hasAnyDate(text: string) {
+  return (
+    /\b\d{4}-\d{2}-\d{2}\b/.test(text) || // 2025-12-25
+    /\b\d{1,2}[./]\d{1,2}\b/.test(text) || // 25.12
+    /\b\d{1,2}\s?(янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|oct|окт|ноя|дек)\w*/i.test(text)
+  )
+}
+
+function hasAnyTime(text: string) {
+  return /\b\d{1,2}[:.]\d{2}\b/.test(text)
+}
+
+function hasAnyBudget(text: string) {
+  return /\b\d{3,}\b/.test(text) || /договорн/i.test(text)
+}
+
+function hasAnyRole(text: string) {
+  return /(аниматор|фокусник|ведущ|квест|шоу|фото|видео|дед\s?мороз|снегурочк|ростов(ая|ой)|мастер-?класс|клоун|фей|принцесс|фейерверк|иллюзионист)/i.test(text)
+}
+
+function hasAnyPlace(text: string) {
+  return /(ул\.|улица|просп|пр-т|пл\.|метро|ресторан|кафе|парк|лофт|студия|загород|за городом|коттедж|пос[её]лок|деревн|спб|санкт-петербург|москва|мо\b|ленобл|адрес)/i.test(text)
+}
+
+function detectCategory(text: string): string | undefined {
+  if (/фокусник|иллюз/i.test(text)) return 'show'
+  if (/аниматор|геро|персонаж|ростов/i.test(text)) return 'animator'
+  if (/ведущ/i.test(text)) return 'host'
+  if (/квест/i.test(text)) return 'quest'
+  if (/мастер[- ]?класс|МК/i.test(text)) return 'masterclass'
+  if (/фото|видео|фотограф|видеограф/i.test(text)) return 'photo_video'
+  if (/дед\s?мороз|снегуроч/i.test(text)) return 'santa'
+  return undefined
+}
+
+function parseBudget(text: string): number | undefined {
+  // Убираем времена формата 12:00, чтобы не путать с бюджетом
+  const cleanedText = text.replace(/\b\d{1,2}[:.]\d{2}\b/g, ' ')
+  const matches = cleanedText.match(/(\d[\d\s.,]{2,})/g)
+  if (!matches) return undefined
+  const numbers = matches
+    .map((m) => m.replace(/\s/g, '').replace(/[,\.]/g, ''))
+    .map((m) => parseInt(m, 10))
+    .filter((n) => Number.isFinite(n))
+    .filter((n) => n >= 500) // отсекаем вероятные время/мелкие числа
+  if (numbers.length === 0) return undefined
+  // Берём максимальное число как наиболее вероятный бюджет
+  return Math.max(...numbers)
+}
+
+function parseTime(text: string): string | undefined {
+  // 1) Точное время 10:30, 10.30
+  const full = text.match(/\b(\d{1,2})[:.](\d{2})\b/)
+  if (full) {
+    const hh = full[1].padStart(2, '0')
+    const mm = full[2]
+    return `${hh}:${mm}`
+  }
+
+  // 2) Формат "в 10 утра/вечера/дня/ночи" или "10 утра"
+  const withMeridiem = text.match(/\b(?:в\s*)?(\d{1,2})\s*(утра|вечера|дня|ночи)\b/i)
+  if (withMeridiem) {
+    let hhNum = parseInt(withMeridiem[1], 10)
+    const meridiem = withMeridiem[2].toLowerCase()
+    if (meridiem.includes('вечер') || meridiem.includes('ночи')) {
+      if (hhNum < 12) hhNum += 12
+    }
+    // "дня" обычно дневное время, оставляем как есть
+    const hh = hhNum.toString().padStart(2, '0')
+    return `${hh}:00`
+  }
+
+  // 3) Формат "в 10" (требуем предлог "в", чтобы не ловить числа даты)
+  const hourOnly = text.match(/\bв\s*(\d{1,2})\b/i)
+  if (hourOnly) {
+    const hh = hourOnly[1].padStart(2, '0')
+    return `${hh}:00`
+  }
+
+  return undefined
+}
+
+function parseDate(text: string): string | undefined {
+  const monthMap: Record<string, number> = {
+    янв: 0, фев: 1, мар: 2, апр: 3, мая: 4, май: 4, июн: 5, июл: 6, авг: 7, сен: 8, окт: 9, октя: 9, ноя: 10, дек: 11,
+  }
+  const dot = text.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/)
+  if (dot) {
+    const day = parseInt(dot[1], 10)
+    const mon = parseInt(dot[2], 10) - 1
+    const year = dot[3] ? parseInt(dot[3], 10) + (dot[3].length === 2 ? 2000 : 0) : CURRENT_YEAR
+    if (day >= 1 && day <= 31 && mon >= 0 && mon <= 11) {
+      return `${year}-${(mon + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`
+    }
+  }
+  const words = text.match(/\b(\d{1,2})\s?(янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек)\w*/i)
+  if (words) {
+    const day = parseInt(words[1], 10)
+    const monKey = words[2].slice(0, 3).toLowerCase()
+    const mon = monthMap[monKey]
+    if (mon !== undefined) {
+      let year = CURRENT_YEAR
+      // если дата уже прошла, берем следующий год
+      const today = new Date()
+      const candidate = new Date(year, mon, day)
+      if (candidate.getTime() < today.getTime()) {
+        year += 1
+      }
+      return `${year}-${(mon + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`
+    }
+  }
+  return undefined
+}
+
+function parseAddress(text: string): { city?: string; address?: string } {
+  let city: string | undefined
+  if (/москв/i.test(text)) city = 'Москва'
+  if (/спб|санкт[- ]?петербург|питер/i.test(text)) city = 'Санкт-Петербург'
+  // грубо вытаскиваем после "в " до запятой/точки
+  const addrMatch = text.match(/в\s+([A-Za-zА-Яа-я0-9"«»\s\-]+?)(?:[,\.]|$)/i)
+  const address = addrMatch ? addrMatch[1].trim() : undefined
+  return { city, address }
+}
+
+function parseChildrenCount(text: string): number | undefined {
+  const matches: number[] = []
+  const patterns = [
+    /(?:дет[еи]|детям|деткам|ребят|человек|чел)\s*(?:будет|будут|около|примерно|~)?\s*(\d{1,3})/gi,
+    /(\d{1,3})\s*(?:дет[еи]|детям|деткам|человек|чел|ребят)/gi,
+    /детей\s*[\.,]?\s*(\d{1,3})/gi,
+  ]
+
+  for (const re of patterns) {
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      const num = parseInt(m[1], 10)
+      if (Number.isFinite(num)) matches.push(num)
+    }
+  }
+
+  if (matches.length === 0) return undefined
+  return Math.max(...matches)
+}
+
+function parseChildrenAge(text: string): { from?: number; to?: number; single?: number } | undefined {
+  const m = text.match(/(\d{1,2})\s*(?:лет|год[ау]?)/i)
+  if (m) {
+    const age = parseInt(m[1], 10)
+    if (Number.isFinite(age)) {
+      return { from: age, to: age, single: age }
+    }
+  }
+  // Диапазон вида 5-8 лет
+  const m2 = text.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s*(?:лет|год)/i)
+  if (m2) {
+    const from = parseInt(m2[1], 10)
+    const to = parseInt(m2[2], 10)
+    if (Number.isFinite(from) && Number.isFinite(to)) {
+      return { from, to }
+    }
+  }
+  return undefined
+}
+
+function parseVenueType(text: string): string | undefined {
+  if (/ресторан|кафе|банкет/i.test(text)) return 'restaurant'
+  if (/квартира|дома|дом|коттедж|загород|на дому/i.test(text)) return 'home'
+  if (/парк|улиц|open\s?air|на улице/i.test(text)) return 'outdoor'
+  if (/школ|садик|детский сад/i.test(text)) return 'school'
+  if (/офис/i.test(text)) return 'office'
+  if (/лофт|студия|пространств/i.test(text)) return 'other'
+  if (/клуб/i.test(text)) return 'club'
+  return undefined
+}
+
+function detectShowType(text: string): string | undefined {
+  if (/фокус/i.test(text)) return 'magic'
+  if (/шоу/i.test(text)) return 'magic'
+  return undefined
+}
+
+function buildTitle(text: string, category?: string): string | undefined {
+  if (category === 'show' && /фокус/i.test(text)) return 'Фокусник на праздник'
+  return undefined
+}
+
+function buildDescription(primaryText: string): string | undefined {
+  const cleaned = primaryText
+    .replace(/создай\s+объявление[:,]?\s*/i, '')
+    .replace(/сделай\s+объявление[:,]?\s*/i, '')
+    .replace(/нужен\s+фокусник[:,]?\s*/i, '')
+    .trim()
+  if (!cleaned) return undefined
+  return cleaned.slice(0, 300)
+}
+
+function parsePhone(text: string): string | undefined {
+  const cleanDigits = text.replace(/[^\d+]/g, '')
+  // +7XXXXXXXXXX or 8XXXXXXXXXX or 11 digits
+  const m = cleanDigits.match(/(\+7|7|8)?\d{10}/)
+  if (!m) return undefined
+  let digits = m[0]
+  if (digits.startsWith('8')) digits = '+7' + digits.slice(1)
+  if (digits.startsWith('7')) digits = '+7' + digits.slice(1)
+  if (!digits.startsWith('+7')) digits = '+7' + digits
+  return digits
+}
+
+function normalizePhone(phone?: string): string | undefined {
+  if (!phone) return undefined
+  const clean = phone.replace(/[^\d+]/g, '')
+  const m = clean.match(/(\+7|7|8)?\d{10}/)
+  if (!m) return undefined
+  let digits = m[0]
+  if (digits.startsWith('8')) digits = '+7' + digits.slice(1)
+  if (digits.startsWith('7')) digits = '+7' + digits.slice(1)
+  if (!digits.startsWith('+7')) digits = '+7' + digits
+  return digits
+}
+
+function parseDraftQuick(primaryText: string, contextText?: string): DraftType {
+  const base = primaryText
+  const fallback = contextText && contextText !== primaryText ? contextText : ''
+  const combined = `${base}\n${fallback}`.trim()
+
+  // Всегда стараемся брать из основного текста; если нет — пробуем из контекста
+  const pick = <T>(primary: T | undefined, fallbackValue: T | undefined) =>
+    primary !== undefined && primary !== null ? primary : fallbackValue
+
+  const category = pick(detectCategory(base), detectCategory(fallback))
+  const budget =
+    pick(parseBudget(base), parseBudget(fallback)) ??
+    parseBudget(combined)
+  const budgetNegotiable =
+    pick(/договорн/i.test(base) ? true : undefined, /договорн/i.test(fallback) ? true : undefined) ??
+    (/договорн/i.test(combined) ? true : undefined)
+  const eventTime = pick(parseTime(base), parseTime(fallback)) ?? parseTime(combined)
+  const eventDate = pick(parseDate(base), parseDate(fallback)) ?? parseDate(combined)
+
+  const primaryAddr = parseAddress(base)
+  const fallbackAddr = parseAddress(fallback)
+  const city = pick(primaryAddr.city, fallbackAddr.city)
+  const address = pick(primaryAddr.address, fallbackAddr.address)
+
+  const childrenCount = pick(parseChildrenCount(base), parseChildrenCount(fallback))
+  const ageData = pick(parseChildrenAge(base), parseChildrenAge(fallback))
+  const venueType = pick(parseVenueType(base), parseVenueType(fallback))
+  const showType = pick(detectShowType(base), detectShowType(fallback))
+  const title = pick(buildTitle(base, category), buildTitle(fallback, category))
+  const description = pick(buildDescription(base), buildDescription(fallback))
+  const contactPhone = parsePhone(primaryText)
+
+  return {
+    category,
+    budget,
+    budgetNegotiable: budgetNegotiable ?? /договорн/i.test(primaryText),
+    eventDate,
+    eventTime,
+    city: city || (address ? DEFAULT_CITY : undefined),
+    address,
+    venueType,
+    clientType: 'parent',
+    childrenCount,
+    childrenAgeRange: ageData
+      ? { from: ageData.from ?? ageData.single, to: ageData.to ?? ageData.single }
+      : undefined,
+    birthdayChild: ageData?.single ? { age: ageData.single } : undefined,
+    details: showType ? { showType } : undefined,
+    title,
+    description,
+    contactMethod: 'chat',
+    preferredContactTime: 'any',
+    contactPhone,
+  }
+}
+
+/**
+ * AI Chat Endpoint с векторным поиском
+ * Использует Gemini для генерации ответов и Supabase pgvector для поиска профилей
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const { message, conversationHistory = [], currentProfileId } = await request.json()
+
+    if (!message || typeof message !== 'string') {
+      return NextResponse.json(
+        { error: 'Сообщение обязательно' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    
+    // Получаем пользователя
+    const { data: { user } } = await supabase.auth.getUser()
+    let userPhone = normalizePhone(
+      user?.phone ||
+      user?.user_metadata?.phone ||
+      user?.user_metadata?.phone_number ||
+      user?.user_metadata?.phoneNumber
+    )
+    
+    let isAdmin = false
+
+    if (user) {
+      // Роль пользователя (для админов отключаем лимит)
+      const { data: userData } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      isAdmin = userData?.role === 'admin'
+
+      // Фолбэк: если телефона нет в auth, пробуем взять из профиля
+      if (!userPhone) {
+        const { data: profilePhone } = await supabase
+          .from('profiles')
+          .select('phone')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle()
+
+        if (profilePhone?.phone) {
+          userPhone = normalizePhone(profilePhone.phone)
+        }
+      }
+
+      if (isAdmin) {
+        // Админы без лимитов
+      } else {
+      // Проверяем rate limit
+      const { data: rateLimit } = await supabase
+        .from('ai_chat_rate_limits')
+        .select('*')
+        .eq('user_id', user.id)
+        .single()
+
+      const now = new Date()
+      const hourAgo = new Date(now.getTime() - 60 * 60 * 1000)
+
+      if (rateLimit) {
+        const lastMessageTime = new Date(rateLimit.last_message_at)
+        
+        // Если последнее сообщение больше часа назад, сбрасываем счетчик
+        if (lastMessageTime < hourAgo) {
+          await supabase
+            .from('ai_chat_rate_limits')
+            .update({ message_count: 1, last_message_at: now.toISOString() })
+            .eq('user_id', user.id)
+        } else {
+          // Проверяем лимит (20 сообщений в час)
+          if (rateLimit.message_count >= 20) {
+            const retryAfterSeconds = 3600
+            const retryAt = new Date(now.getTime() + retryAfterSeconds * 1000)
+            return NextResponse.json(
+              { 
+                error: 'Слишком много сообщений. Пожалуйста, подождите немного 😊', 
+                retry_after: retryAfterSeconds, 
+                retry_at_iso: retryAt.toISOString()
+              },
+              { status: 429 }
+            )
+          }
+
+          // Увеличиваем счетчик
+          await supabase
+            .from('ai_chat_rate_limits')
+            .update({ 
+              message_count: rateLimit.message_count + 1, 
+              last_message_at: now.toISOString() 
+            })
+            .eq('user_id', user.id)
+        }
+      } else {
+        // Первое сообщение, создаем запись
+        await supabase
+          .from('ai_chat_rate_limits')
+          .insert({ 
+            user_id: user.id, 
+            message_count: 1, 
+            last_message_at: now.toISOString() 
+          })
+      }
+    }
+    }
+
+    // Блок: быстрый триггер «создай объявление/заявку»
+    const normalizedMsg = message.toLowerCase()
+    const isDraftTrigger = /(создай|создать|сделай|собери|оформи|сгенерируй).{0,10}(объявлен|заявк)/i.test(normalizedMsg)
+
+    const lastAssistant = [...(conversationHistory || [])].reverse().find((m: any) => m.role === 'assistant')
+    const pendingDraft =
+      lastAssistant &&
+      /почти готово|нужны уточнения|черновик заявки|собрал черновик|готов черновик|соберу ссылку/i.test(
+        lastAssistant.content || ''
+      )
+
+    // Собираем контекст из последних сообщений пользователя, чтобы не терять детали
+    const userContext = [
+      ...(conversationHistory || [])
+        .filter((m: any) => m.role === 'user')
+        .slice(-5)
+        .map((m: any) => m.content || ''),
+      message,
+    ]
+      .filter(Boolean)
+      .join('. ')
+
+  // Быстрый парс до решения, чтобы понять, что это точно объявление
+    const quickPrecheck = parseDraftQuick(message, userContext)
+    const likelyDraft =
+      !!quickPrecheck.category &&
+      !!quickPrecheck.eventDate &&
+      (!!quickPrecheck.budget || quickPrecheck.budgetNegotiable) &&
+      (!!quickPrecheck.address || !!quickPrecheck.city)
+
+    const isDraftFlow = isDraftTrigger || pendingDraft || likelyDraft
+
+    if (isDraftFlow) {
+      // Правило: сначала быстрый парсер, без генерации
+      const quick = quickPrecheck
+      const hasDate = !!quick.eventDate
+      const hasTime = !!quick.eventTime
+      const hasBudget = !!quick.budget || quick.budgetNegotiable
+      const hasRole = !!quick.category
+      const hasPlace = !!quick.address || !!quick.city
+      const detailsScore = [hasDate, hasTime, hasBudget, hasRole, hasPlace].filter(Boolean).length
+
+      // Если это не продолжающийся диалог (нет pendingDraft/likelyDraft), и данных совсем мало — просим базовый набор
+      if (!pendingDraft && !likelyDraft && (message.trim().length < 25 || detailsScore < 2)) {
+        return NextResponse.json({
+          response:
+            'Чтобы собрать черновик, укажите в одной фразе: дату, время, кого ищем, адрес/город и бюджет. Пример: "25 декабря 17:00 фокусник, ресторан Рыба на даче, бюджет 15000".',
+          suggestions: [
+            '25 декабря 17:00 фокусник, ресторан Рыба на даче, бюджет 15000',
+            '31 декабря 19:30 аниматор Эльза, Комендантский, договорная',
+            'Суббота 12:00 квест на улице, Пушкин, до 20000',
+          ],
+          gallery: [],
+        })
+      }
+
+      const draft = normalizeDraft(quick)
+
+      // Подстраховка: если бюджет не разобран, тянем из контекста
+      if (!draft.budget && !draft.budgetNegotiable) {
+        const ctxBudget = parseBudget(userContext)
+        if (ctxBudget) draft.budget = ctxBudget
+        if (draft.budgetNegotiable === undefined) {
+          draft.budgetNegotiable = /договорн/i.test(userContext) || draft.budgetNegotiable
+        }
+      }
+
+      // Подставляем телефон из аккаунта, если его нет в сообщении
+      if (!draft.contactPhone && userPhone) {
+        draft.contactPhone = userPhone
+      }
+      const lacks = missingFields(draft)
+      const softLacks = optionalMissing(draft)
+
+      // Если не хватает обязательных полей — спрашиваем и не идём дальше
+      if (lacks.length > 0) {
+        return NextResponse.json({
+          response: `Не хватает деталей: ${lacks.join(', ')}. Напишите одной фразой, и соберу ссылку на черновик.`,
+          suggestions: ['Добавьте время', 'Укажите адрес', 'Сумма бюджета'],
+          gallery: [],
+        })
+      }
+
+      // Если не хватает мягких полей — спрашиваем и не идём дальше
+      if (softLacks.length > 0) {
+        return NextResponse.json({
+          response: `Почти готово. Нужны уточнения: ${softLacks.join(', ')}. Напишите одной фразой, и сразу соберу ссылку на черновик.`,
+          suggestions: ['Детей 10-12 лет, 15 человек', 'Описание: интерактив с фокусами и участием детей', 'Телефон: +7 ...'],
+          gallery: [],
+        })
+      }
+
+      // Все поля есть — сразу отдаём ссылку
+      const encoded = Buffer.from(JSON.stringify(draft), 'utf-8').toString('base64url')
+      const link = `/create-request?prefill=${encoded}`
+      const summaryParts = [
+        draft.eventDate ? `📅 ${draft.eventDate}` : null,
+        draft.eventTime ? `⏰ ${draft.eventTime}` : null,
+        draft.city ? `📍 ${draft.city}${draft.address ? ', ' + draft.address : ''}` : draft.address ? `📍 ${draft.address}` : null,
+        draft.budget ? `💰 ${draft.budget.toLocaleString('ru-RU')} ₽` : draft.budgetNegotiable ? '💰 Договорная' : null,
+        draft.category ? `🧩 ${draft.category}` : null,
+      ].filter(Boolean)
+
+      return NextResponse.json({
+        response: `Собрал черновик заявки.\n\n${summaryParts.join(' • ')}\n\n[Открыть черновик](${link}) — проверьте детали и опубликуйте.`,
+        suggestions: ['Изменить бюджет', 'Поменять время', 'Добавить описание программы'],
+        gallery: [],
+      })
+    }
+
+    // Шаг 1: Используем Gemini для понимания запроса и генерации embedding
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' })
+    
+    // Генерируем embedding для векторного поиска
+    const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' })
+    const embeddingResult = await embeddingModel.embedContent(message)
+    const embedding = embeddingResult.embedding.values
+    
+    // Шаг 1.5: Если пользователь на странице профиля, загружаем его данные
+    let currentPageProfile = null
+    if (currentProfileId) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, display_name, slug, category, description, bio, city, rating, cover_photo')
+        .eq('id', currentProfileId)
+        .single()
+      
+      if (profile) {
+        currentPageProfile = profile
+        console.log('[AI Chat] User is on profile page:', profile.display_name)
+      }
+    }
+
+    // Шаг 2: Векторный поиск по профилям
+    const { data: profiles, error: searchError } = await supabase.rpc(
+      'search_profiles_by_vector',
+      {
+        query_embedding: embedding,
+        // Немного снижаем порог, чтобы вернуть больше кандидатов
+        match_threshold: 0.3,
+        match_count: 8,
+      }
+    )
+
+    if (searchError) {
+      console.error('Vector search error:', searchError)
+    }
+
+    // Фолбэк: если векторный поиск не дал результатов, пробуем ILIKE по названию/slug/описанию
+    let fallbackProfiles = []
+    if (!profiles || profiles.length === 0) {
+      const { data: textProfiles, error: textError } = await supabase
+        .from('profiles')
+        .select('id, display_name, category, description, city, slug, rating, cover_photo')
+        .ilike('display_name', `%${message}%`)
+        .limit(5)
+
+      if (textError) {
+        console.error('Text fallback search error:', textError)
+      } else {
+        fallbackProfiles = textProfiles || []
+      }
+    }
+
+    // Шаг 3: Загружаем дополнительную информацию для найденных профилей
+    const effectiveProfiles = (profiles && profiles.length > 0) ? profiles : fallbackProfiles
+    
+    const enrichedProfiles = await Promise.all(
+      (effectiveProfiles || []).slice(0, 3).map(async (profile: any) => {
+        // Загружаем услуги (НЕ пакеты)
+        const { data: services } = await supabase
+          .from('services')
+          .select('id, title, description, price, price_from, duration, age_from, age_to, tags, package_group_id')
+          .eq('profile_id', profile.id)
+          .eq('is_active', true)
+          .limit(10) // Больше, чтобы отфильтровать доп. услуги
+
+        // Загружаем пакетные тарифы (с package_group_id)
+        const { data: packageTiers } = await supabase
+          .from('services')
+          .select('id, title, description, price, details, tags, package_group_id, tier_name')
+          .eq('profile_id', profile.id)
+          .eq('is_active', true)
+          .not('package_group_id', 'is', null)
+          .limit(5)
+
+        // Загружаем ОТЗЫВЫ (реальные мнения клиентов)
+        const { data: reviews } = await supabase
+          .from('reviews')
+          .select('rating, comment, created_at')
+          .eq('profile_id', profile.id)
+          .eq('visible', true)
+          .eq('moderated', true)
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        // Загружаем отзывы с Яндекс.Карт (если есть локации)
+        const { data: locations } = await supabase
+          .from('profile_locations')
+          .select('id')
+          .eq('profile_id', profile.id)
+          .eq('active', true)
+          .limit(1)
+
+        let yandexReviews: any[] = []
+        if (locations && locations.length > 0) {
+          const { data: yandexData } = await supabase
+            .from('yandex_reviews_cache')
+            .select('reviews, rating, review_count')
+            .eq('profile_location_id', locations[0].id)
+            .single()
+
+          if (yandexData?.reviews && Array.isArray(yandexData.reviews)) {
+            yandexReviews = yandexData.reviews.slice(0, 5).map((r: any) => ({
+              source: 'yandex',
+              rating: r.rating || 0,
+              comment: r.text || '',
+              author: r.author || 'Аноним'
+            }))
+          }
+        }
+
+        return {
+          ...profile,
+          services: services || [],
+          packageTiers: packageTiers || [],
+          reviews: reviews || [],
+          yandexReviews: yandexReviews
+        }
+      })
+    )
+
+    const profileContext = enrichedProfiles && enrichedProfiles.length > 0
+      ? enrichedProfiles.map((p: any) => {
+          let context = `
+### ${p.display_name} (${p.category})
+**Рейтинг**: ${p.rating || 'нет'} ⭐ (${p.reviews?.length || 0} отзывов)
+**Город**: ${p.city || 'не указан'}
+**Описание**: ${p.short_description || p.description || 'нет описания'}
+**Ссылка**: /profiles/${p.slug}
+**Обложка**: ${p.cover_photo || '/placeholder.jpg'}
+`
+          // Добавляем услуги
+          if (p.services && p.services.length > 0) {
+            context += `\n**Услуги**:\n`
+            p.services.forEach((s: any) => {
+              context += `- ${s.title} [ID: ${s.id}]`
+              if (s.age_from || s.age_to) context += ` (${s.age_from || '?'}-${s.age_to || '?'} лет)`
+              if (s.price) context += ` - ${s.price}₽`
+              else if (s.price_from) context += ` - от ${s.price_from}₽`
+              if (s.duration) context += `, ${s.duration} мин`
+              context += '\n'
+            })
+          }
+
+          // Добавляем пакеты
+          if (p.packageTiers && p.packageTiers.length > 0) {
+            context += `\n**Пакетные предложения**:\n`
+            p.packageTiers.forEach((tier: any) => {
+              context += `- **${tier.title}** [ID: ${tier.id}]`
+              if (tier.description) {
+                context += `: ${tier.description}`
+              }
+              if (tier.price) context += ` - ${tier.price}₽`
+              context += '\n'
+            })
+          }
+
+          // Добавляем ОТЗЫВЫ (самое ценное для AI!)
+          if (p.reviews && p.reviews.length > 0) {
+            context += `\n**Отзывы клиентов на платформе** (${p.reviews.length}):\n`
+            p.reviews.forEach((r: any, idx: number) => {
+              const excerpt = r.comment?.substring(0, 150) || ''
+              context += `${idx + 1}. ⭐${r.rating}/5: "${excerpt}${r.comment?.length > 150 ? '...' : ''}"\n`
+            })
+          }
+
+          // Добавляем отзывы с Яндекс.Карт
+          if (p.yandexReviews && p.yandexReviews.length > 0) {
+            context += `\n**Отзывы на Яндекс.Картах** (${p.yandexReviews.length}):\n`
+            p.yandexReviews.forEach((r: any, idx: number) => {
+              const excerpt = r.comment?.substring(0, 150) || ''
+              context += `${idx + 1}. ⭐${r.rating}/5${r.author ? ` (${r.author})` : ''}: "${excerpt}${r.comment?.length > 150 ? '...' : ''}"\n`
+            })
+          }
+
+          // Подсказка для AI об использовании отзывов
+          if ((p.reviews && p.reviews.length > 0) || (p.yandexReviews && p.yandexReviews.length > 0)) {
+            context += `\n💡 **Используй отзывы для персонализированных рекомендаций!**\n`
+          }
+
+          return context
+        }).join('\n---\n')
+      : 'Профили не найдены по данному запросу.'
+
+    // Система промптов (ПРИОРИТЕТ - ЭМПАТИЯ И ЧЕЛОВЕЧНОСТЬ!)
+    let systemPrompt = `Ты - живой, теплый и заботливый консультант ZumZam по детским праздникам в Санкт-Петербурге.
+
+🌟 ТЫ - ЖИВОЙ ЧЕЛОВЕК, А НЕ РОБОТ:
+- Общайся естественно, по-человечески, с теплотой
+- НЕ используй технические термины (UUID, serviceId, ID, функции, коды)
+- Будь эмпатичным - понимай чувства и потребности родителя
+- Задавай уточняющие вопросы с искренним интересом
+- Используй эмоциональную окраску: "Как чудесно!", "Понимаю вас!", "Отличный выбор!"
+
+❤️ ТВОЙ СТИЛЬ ОБЩЕНИЯ:
+✅ "Добавила в корзину пакет Премиум для вашего малыша! Это будет чудесный праздник 🎉"
+✅ "Подскажите, сколько лет вашему ребенку? Это поможет подобрать идеальную программу"
+✅ "Понимаю ваши переживания! Родители Kids Point отмечают, что дети в восторге"
+❌ "add_to_cart(serviceId="dfe9f7e7-...", notes="Премиум")" - НИКОГДА ТАК!
+❌ "ID: a6a10f6a-9f2d-4a3a-b8a9-9ad5f664867c" - НИКОГДА НЕ ПОКАЗЫВАЙ!
+
+🎯 ЗАДАВАЙ ВОПРОСЫ ПРО РЕБЕНКА:
+- Сколько лет имениннику?
+- Какие у него/нее интересы? (рисование, активные игры, квесты...)
+- Сколько будет гостей?
+- Где планируете праздник? (дома, в студии, на улице)
+- Какой у вас бюджет? (не стесняйтесь!)
+- Есть ли особенности? (стеснительный, гиперактивный, особые потребности)
+
+🛒 ФУНКЦИИ КОРЗИНЫ - ОБЯЗАТЕЛЬНО ВЫЗЫВАЙ!:
+
+⚡ КРИТИЧНО: Когда пользователь просит действие с корзиной - ты ОБЯЗАН вызвать функцию!
+
+**add_to_cart(serviceId, notes)** - когда просят:
+- "Добавь [название]"
+- "Хочу [название]"
+- "Закажи [название]"
+- "Возьми [название]"
+
+**clear_cart()** - когда просят:
+- "Очисти корзину"
+- "Удали всё"
+- "Начни заново"
+- "Сброс"
+
+**show_cart()** - когда просят:
+- "Что в корзине?"
+- "Покажи корзину"
+- "Что я выбрал?"
+
+**remove_from_cart(serviceId)** - когда просят:
+- "Убери [название]"
+- "Удали [название]"
+
+🔥 АЛГОРИТМ:
+1. Пользователь просит действие → СРАЗУ вызываешь функцию (молча!)
+2. Функция выполнится
+3. Отвечаешь по-человечески с подтверждением
+
+Пример:
+Пользователь: "Очисти корзину"
+AI: [Вызывает clear_cart()]
+AI (после выполнения): "Готово! Корзина очищена 🗑️ Начнем выбирать заново?"
+
+ФОРМАТ ОТВЕТА:
+1. **КРАТКОСТЬ**: 2-3 коротких абзаца (до 150 слов)
+
+2. **MARKDOWN & СПИСКИ**:
+   - **Жирный** для названий профилей
+   - *Курсив* для цитат из отзывов
+   - Ссылки: [Название](/profiles/slug)
+   - **СПИСКИ** для рекомендаций (обязательно!):
+   
+   Пример формата:
+   Вот отличные варианты для вас:
+   
+   1. **Название профиля** - Услуга (цена)
+      - Что входит: ...
+      - Возраст: ...
+      - *"Цитата из отзыва"*
+   
+   2. **Название профиля** - Услуга (цена)
+      - Что входит: ...
+      - Возраст: ...
+      - *"Цитата из отзыва"*
+   
+   ❌ НЕ ДЕЛАЙ ТАК (сплошной текст):
+   "Квест-программа "Поиск сокровищ" от Радуга Лофт - это отличный вариант..."
+   
+   ✅ ДЕЛАЙ ТАК (структурированный список):
+   1. **Радуга Лофт** - Квест-программа "Поиск сокровищ" (8,000₽)
+      - Что входит: ...
+   
+3. **СТРУКТУРА**:
+   - Краткий ответ на вопрос (1-2 предложения)
+   - Рекомендации списком (нумерованный список)
+   - **ОБЯЗАТЕЛЬНО** указывай цены и что входит в пакет/услугу
+   - Цитата из отзыва для каждого профиля
+   - Уточняющий вопрос или совет
+   
+   ⚠️ НЕ НУЖНО добавлять галерею руками - она сформируется автоматически!
+   
+4. **ЭМОДЗИ**: 1-2 эмодзи 🎉🎨🎂
+5. **ВАРИАНТЫ ВОПРОСОВ** (КОНТЕКСТНЫЕ!):
+   После ответа предложи 3 ПЕРСОНАЛИЗИРОВАННЫХ варианта на основе ИСТОРИИ ЧАТА:
+   
+   Учитывай из контекста:
+   - Возраст ребенка (если упоминался)
+   - Упомянутые студии/профили
+   - Интересы (рисование, аниматоры, квесты)
+   - Бюджет (если обсуждался)
+   - Локацию (район города)
+   
+   Примеры ХОРОШИХ контекстных вопросов:
+   ✅ "Какие отзывы о KidsPoint?" (если обсуждали KidsPoint)
+   ✅ "Есть ли программы с рисованием дешевле?" (если интересовались ценой)
+   ✅ "Подходит ли для застенчивого ребенка 5 лет?" (если возраст упоминался)
+   
+   Примеры ПЛОХИХ (слишком общих):
+   ❌ "Расскажи еще"
+   ❌ "Что еще есть?"
+   ❌ "Покажи другие варианты"
+   
+   Формат:
+   ---SUGGESTIONS---
+   Контекстный вопрос 1
+   ###
+   Контекстный вопрос 2
+   ###
+   Контекстный вопрос 3
+
+Найденные профили по запросу пользователя:
+${profileContext}
+`
+
+    // Добавляем контекст текущей страницы (если пользователь на профиле)
+    if (currentPageProfile) {
+      systemPrompt += `
+
+📍 ВАЖНО: Пользователь сейчас находится на странице профиля "${currentPageProfile.display_name}"!
+
+Когда пользователь спрашивает:
+- "Расскажи об этом месте" → рассказывай о ${currentPageProfile.display_name}
+- "Обобщи отзывы" → обобщай отзывы о ${currentPageProfile.display_name}
+- "Что входит в пакет?" → описывай пакеты ${currentPageProfile.display_name}
+- "Какие услуги здесь?" → перечисляй услуги ${currentPageProfile.display_name}
+- "Расскажи подробнее" → подробнее о ${currentPageProfile.display_name}
+
+Профиль: ${currentPageProfile.display_name}
+Категория: ${currentPageProfile.category}
+Город: ${currentPageProfile.city}
+Рейтинг: ${currentPageProfile.rating || 'нет'}
+Описание: ${currentPageProfile.description || currentPageProfile.bio || 'нет'}
+
+Используй информацию из "Найденные профили" выше, если там есть этот профиль.
+`
+    }
+
+    // Логируем контекст для отладки
+    console.log('[AI Chat] Profile context preview:', profileContext.substring(0, 1500))
+    console.log('[AI Chat] Services in enrichedProfiles:', enrichedProfiles.map(p => ({ 
+      name: p.display_name, 
+      servicesCount: p.services?.length || 0,
+      packagesCount: p.packageTiers?.length || 0 
+    })))
+
+    // Формируем историю для контекста
+    const chatHistory = conversationHistory.map((msg: any) => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.content }]
+    }))
+
+    // 🔥 MANUAL FUNCTION DETECTION (обход Gemini)
+    const messageLower = message.toLowerCase()
+
+    // Проверяем команды корзины НАПРЯМУЮ (учитываем разные формулировки)
+    const asksClearCart =
+      messageLower.includes('корзин') &&
+      (
+        /очист/ .test(messageLower) || // очисти, очистите, очисть, очистка
+        /удал/  .test(messageLower) || // удалите всё, убрать всё
+        /сброс/ .test(messageLower) || // сброс, сбросить
+        messageLower.includes('reset') ||
+        messageLower.includes('clear')
+      )
+
+    if (user && asksClearCart) {
+      // Отладка: считаем товары до
+      const { count: beforeCount } = await supabase
+        .from('cart_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      console.log('[AI Chat] 🔥 MANUAL clear_cart triggered. Before count:', beforeCount)
+
+      const result = await clearCart(supabase, user.id)
+
+      // Отладка: считаем товары после
+      const { count: afterCount } = await supabase
+        .from('cart_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      console.log('[AI Chat] 🔥 MANUAL clear_cart done. After count:', afterCount, 'success:', result.success)
+      
+      if (result.success) {
+        return NextResponse.json({
+          response: 'Готово! ✨ Корзина полностью очищена. Начнем выбирать заново? Расскажите, что планируете для вашего малыша? 🎉',
+          suggestions: [
+            'Какие студии рисования есть?',
+            'Хочу аниматоров для ребенка 5 лет',
+            'Покажи пакетные предложения'
+          ],
+          function_executed: 'clear_cart',
+          before_count: beforeCount ?? 0,
+          after_count: afterCount ?? 0,
+          profiles: []
+        })
+      } else {
+        return NextResponse.json({
+          response: '😔 Не удалось очистить корзину. Попробуйте еще раз или обратитесь в поддержку.',
+          suggestions: [],
+          profiles: [],
+          before_count: beforeCount ?? 0,
+          after_count: afterCount ?? 0
+        })
+      }
+    }
+
+    // Определяем инструменты (функции) для AI
+    const tools = [{
+      functionDeclarations: [
+        {
+          name: 'add_to_cart',
+          description: 'Добавить услугу или программу в корзину пользователя',
+          parameters: {
+            type: 'object',
+            properties: {
+              serviceId: {
+                type: 'string',
+                description: 'ID услуги (из найденных профилей)'
+              },
+              notes: {
+                type: 'string',
+                description: 'Примечание (например, название тарифа: Эконом, Стандарт, Премиум)'
+              }
+            },
+            required: ['serviceId']
+          }
+        },
+        {
+          name: 'remove_from_cart',
+          description: 'Удалить услугу из корзины пользователя',
+          parameters: {
+            type: 'object',
+            properties: {
+              serviceId: {
+                type: 'string',
+                description: 'ID услуги для удаления'
+              }
+            },
+            required: ['serviceId']
+          }
+        },
+        {
+          name: 'show_cart',
+          description: 'Показать содержимое корзины пользователя',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        },
+        {
+          name: 'clear_cart',
+          description: 'Очистить всю корзину пользователя',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }
+      ]
+    }]
+
+    // Генерируем ответ с инструментами
+    const chat = model.startChat({
+      tools,
+      history: [
+        {
+          role: 'user',
+          parts: [{ text: systemPrompt }]
+        },
+        {
+          role: 'model',
+          parts: [{ text: 'Понял! Готов помогать с организацией детских праздников в Санкт-Петербурге. Чем могу помочь? 🎉' }]
+        },
+        ...chatHistory
+      ],
+      generationConfig: {
+        temperature: 0.8, // Повышена для более творческих рекомендаций
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 2048, // Увеличено для длинных ответов с галереей
+      }
+    })
+
+    const result = await chat.sendMessage(message)
+    const response = result.response
+    
+    // 🔍 ОТЛАДКА: Проверяем что AI вернул
+    console.log('[AI Chat] Response text:', response.text()?.substring(0, 200))
+    console.log('[AI Chat] Has functionCalls property?', !!response.functionCalls)
+    console.log('[AI Chat] functionCalls type:', typeof response.functionCalls)
+    
+    // Проверяем есть ли function calls
+    // functionCalls может быть функцией-геттером или массивом
+    let functionCalls = null
+    if (response.functionCalls) {
+      if (typeof response.functionCalls === 'function') {
+        // Вызываем функцию-геттер
+        functionCalls = response.functionCalls()
+        console.log('[AI Chat] Called functionCalls(), got:', functionCalls)
+      } else if (Array.isArray(response.functionCalls)) {
+        // Уже массив
+        functionCalls = response.functionCalls
+        console.log('[AI Chat] functionCalls is array:', functionCalls)
+      }
+    }
+    
+    console.log('[AI Chat] Function calls extracted:', functionCalls ? functionCalls.length : 'none')
+    
+    if (functionCalls && functionCalls.length > 0) {
+      // Выполняем function calls
+      const functionResponses = await Promise.all(
+        functionCalls.map(async (call: any) => {
+          console.log(`[AI Chat] ⚡ EXECUTING Function: ${call.name}`, call.args)
+          
+          try {
+            let result
+            
+            // Вызываем соответствующую функцию корзины напрямую
+            switch (call.name) {
+              case 'add_to_cart':
+                result = await addToCart(
+                  supabase,
+                  user.id,
+                  call.args?.serviceId,
+                  call.args?.notes
+                )
+                break
+                
+              case 'remove_from_cart':
+                result = await removeFromCart(
+                  supabase,
+                  user.id,
+                  call.args?.serviceId
+                )
+                break
+                
+              case 'show_cart':
+                result = await showCart(supabase, user.id)
+                break
+                
+              case 'clear_cart':
+                result = await clearCart(supabase, user.id)
+                break
+                
+              default:
+                result = { success: false, message: 'Неизвестная функция' }
+            }
+            
+            return {
+              name: call.name,
+              response: result
+            }
+  } catch (error: any) {
+            console.error(`[AI Chat] Function call error:`, error)
+            return {
+              name: call.name,
+              response: { success: false, message: 'Ошибка выполнения', error: error.message }
+            }
+          }
+        })
+      )
+
+      // Отправляем результаты обратно в AI для формирования финального ответа
+      // Gemini ожидает parts с functionResponse для каждого вызова
+      const finalResult = await chat.sendMessage(
+        functionResponses.map(fr => ({
+          functionResponse: {
+            name: fr.name,
+            response: fr.response
+          }
+        }))
+      )
+
+      const fullResponse = finalResult.response.text()
+
+      // Парсим ответ и варианты вопросов
+      const [aiResponse, suggestionsRaw] = fullResponse.split('---SUGGESTIONS---')
+      const suggestions = suggestionsRaw
+        ? suggestionsRaw.trim().split('###').map(s => s.trim()).filter(Boolean)
+        : []
+
+      return NextResponse.json({
+        response: aiResponse.trim(),
+        suggestions: suggestions.slice(0, 3),
+        function_calls: functionCalls.map((fc: any) => fc.name), // Для отладки
+        profiles: enrichedProfiles.map((p: any) => ({
+          id: p.id,
+          display_name: p.display_name,
+          slug: p.slug,
+          rating: p.rating,
+          category: p.category
+        })) || []
+      })
+    }
+
+    // Обычный ответ без function calls
+    console.log('[AI Chat] ⚠️ NO FUNCTION CALLS - AI responded with text only')
+    const fullResponse = response.text()
+
+    // Парсим ответ и варианты вопросов
+    const [aiResponse, suggestionsRaw] = fullResponse.split('---SUGGESTIONS---')
+    const suggestions = suggestionsRaw
+      ? suggestionsRaw.trim().split('###').map(s => s.trim()).filter(Boolean)
+      : []
+
+    // Определяем нужна ли галерея (только для запросов подборки/поиска)
+    const needsGallery = (() => {
+      const lowerMessage = message.toLowerCase()
+      
+      // Если пользователь на странице профиля и спрашивает о НЕМ - галерея НЕ нужна
+      if (currentPageProfile) {
+        const aboutCurrentProfile = 
+          /расскажи|обобщи|отзыв|что входит|какие услуг|подробнее|про это место|об этом месте|здесь/i.test(lowerMessage)
+        
+        if (aboutCurrentProfile) {
+          console.log('[AI Chat] Question about current profile - NO gallery needed')
+          return false
+        }
+      }
+      
+      // Галерея нужна если запрос про поиск/подборку
+      const isSearchQuery = 
+        /покажи|найди|порекоменду|подбер|предложи|есть ли|где найти|для.*лет|бюджет|праздник|студи|аниматор|квест|подборк|вариант/i.test(lowerMessage)
+      
+      if (isSearchQuery && enrichedProfiles.length > 0) {
+        console.log('[AI Chat] Search query detected - gallery needed')
+        return true
+      }
+      
+      // Общие вопросы - галерея не нужна
+      console.log('[AI Chat] General question - NO gallery needed')
+      return false
+    })()
+
+    // Формируем галерею только если нужна
+    const gallery = needsGallery ? enrichedProfiles.slice(0, 5).map((p: any) => {
+      let bestService = null
+      
+      // ПРИОРИТЕТ 1: Пакетные тарифы (package_group_id)
+      if (p.packageTiers && p.packageTiers.length > 0) {
+        // Берем первый тариф (обычно самый популярный)
+        bestService = p.packageTiers[0]
+      }
+      
+      // ПРИОРИТЕТ 2: Праздники под ключ (tags содержит "под ключ")
+      if (!bestService && p.services && p.services.length > 0) {
+        const turnkeyService = p.services.find((s: any) => 
+          s.tags?.includes('под ключ') || 
+          s.title?.toLowerCase().includes('под ключ')
+        )
+        if (turnkeyService) {
+          bestService = turnkeyService
+        }
+      }
+      
+      // ПРИОРИТЕТ 3: Основные услуги (НЕ доп. услуги)
+      if (!bestService && p.services && p.services.length > 0) {
+        // Фильтруем: НЕ доп. услуги, НЕ пакеты
+        const mainServices = p.services.filter((s: any) => 
+          !s.tags?.includes('доп') && 
+          !s.tags?.includes('дополнительная') &&
+          !s.package_group_id &&
+          !s.title?.toLowerCase().includes('дополнительн')
+        )
+        
+        if (mainServices.length > 0) {
+          // Берем самую дорогую основную услугу
+          bestService = mainServices.sort((a: any, b: any) => {
+            const priceA = a.price || a.price_from || 0
+            const priceB = b.price || b.price_from || 0
+            return priceB - priceA
+          })[0]
+        }
+      }
+
+      return {
+        id: bestService?.id || p.id,
+        profileId: p.id,
+        profileName: p.display_name,
+        profileSlug: p.slug,
+        serviceTitle: bestService?.title || null,
+        image: p.cover_photo || '/placeholder.jpg',
+        price: bestService?.price || bestService?.price_from || null,
+        rating: p.rating || null,
+      }
+    }) : [] // Пустой массив если галерея не нужна
+
+    return NextResponse.json({
+      response: aiResponse.trim(),
+      suggestions: suggestions.slice(0, 3), // Максимум 3 варианта
+      gallery: gallery, // Галерея только при поиске
+      profiles: enrichedProfiles.map((p: any) => ({
+        id: p.id,
+        display_name: p.display_name,
+        slug: p.slug,
+        rating: p.rating,
+        category: p.category
+      })) || []
+    })
+
+  } catch (error) {
+    console.error('AI Chat Error:', error)
+    return NextResponse.json(
+      { error: 'Ошибка при обработке запроса' },
+      { status: 500 }
+    )
+  }
+}

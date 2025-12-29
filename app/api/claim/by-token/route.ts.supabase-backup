@@ -1,0 +1,119 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * POST /api/claim/by-token
+ * Принятие профиля по секретному токену (автоматически, без модерации)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Необходима авторизация' },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { token } = body
+
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Токен обязателен' },
+        { status: 400 }
+      )
+    }
+
+    // Находим профиль по токену
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, slug, display_name, claim_status, user_id')
+      .eq('claim_token', token)
+      .single()
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: 'Профиль не найден или ссылка недействительна' },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем, не занят ли уже профиль
+    if (profile.user_id) {
+      return NextResponse.json(
+        { error: 'Этот профиль уже имеет владельца' },
+        { status: 400 }
+      )
+    }
+
+    if (profile.claim_status === 'claimed') {
+      return NextResponse.json(
+        { error: 'Этот профиль уже был принят' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, нет ли у пользователя уже профиля
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (existingProfile) {
+      return NextResponse.json(
+        { error: 'У вас уже есть профиль. Один пользователь может иметь только один профиль.' },
+        { status: 400 }
+      )
+    }
+
+    // Передаём профиль пользователю
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        user_id: user.id,
+        claim_status: 'claimed',
+        claimed_at: new Date().toISOString(),
+        // Генерируем новый токен (чтобы старый стал недействительным)
+        claim_token: crypto.randomUUID(),
+      })
+      .eq('id', profile.id)
+
+    if (updateError) {
+      console.error('Error claiming profile:', updateError)
+      return NextResponse.json(
+        { error: 'Ошибка при принятии профиля' },
+        { status: 500 }
+      )
+    }
+
+    // Обновляем роль пользователя на provider (если он был client)
+    await supabase
+      .from('users')
+      .update({ role: 'provider' })
+      .eq('id', user.id)
+      .eq('role', 'client')
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        id: profile.id,
+        slug: profile.slug,
+        display_name: profile.display_name,
+      },
+      message: 'Поздравляем! Профиль теперь ваш.',
+    })
+  } catch (error) {
+    console.error('Claim by token API error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

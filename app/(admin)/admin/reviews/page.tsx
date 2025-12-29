@@ -1,338 +1,259 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { CheckCircle, XCircle, Eye, EyeOff, Loader2, Star } from 'lucide-react'
-import { useUser } from '@/lib/hooks/useUser'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Loader2, Star, Trash2, ExternalLink, User, Filter, X } from 'lucide-react'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import Link from 'next/link'
 
-/**
- * Модерация отзывов
- */
-export default function AdminReviewsPage() {
-  const router = useRouter()
-  const { user, loading: userLoading } = useUser()
-  const [reviews, setReviews] = useState<any[]>([])
+interface Review {
+  id: string
+  rating: number
+  comment: string | null
+  created_at: string
+  profile_id: string
+  user_id: string | null
+  profiles: {
+    slug: string
+    display_name: string
+    category: string | null
+  }
+  users: {
+    full_name: string | null
+    email: string
+  } | null
+}
+
+export default function ReviewsPage() {
+  const [reviews, setReviews] = useState<Review[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [profileFilter, setProfileFilter] = useState('')
+  const [userFilter, setUserFilter] = useState('')
 
   useEffect(() => {
-    if (!userLoading && !user) {
-      router.push('/login')
-    }
-  }, [user, userLoading, router])
+    fetchReviews()
+  }, [page, profileFilter, userFilter])
 
-  useEffect(() => {
-    if (user) {
-      loadReviews()
-    }
-  }, [user])
-
-  const loadReviews = async () => {
-    setIsLoading(true)
+  const fetchReviews = async () => {
     try {
-      // Загружаем ВСЕ отзывы (включая неодобренные)
-      const response = await fetch('/api/reviews?author_id=' + user?.id)
+      setIsLoading(true)
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '20'
+      })
+      if (profileFilter) params.append('profile_id', profileFilter)
+      if (userFilter) params.append('user_id', userFilter)
+
+      const response = await fetch(`/api/admin/reviews?${params}`)
+      if (!response.ok) throw new Error('Failed to fetch reviews')
+
       const data = await response.json()
       setReviews(data.reviews || [])
+      setTotal(data.pagination?.total || 0)
+      setTotalPages(data.pagination?.pages || 1)
     } catch (error) {
-      console.error('Load reviews error:', error)
+      console.error('Error fetching reviews:', error)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleApprove = async (reviewId: string, approved: boolean) => {
+  const handleDelete = async (id: string) => {
+    if (!confirm('Вы уверены, что хотите удалить этот отзыв?')) return
+
     try {
-      const response = await fetch(`/api/reviews/${reviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_approved: approved }),
+      const response = await fetch(`/api/admin/reviews/${id}`, {
+        method: 'DELETE'
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to update review')
-      }
+      if (!response.ok) throw new Error('Failed to delete')
 
-      toast.success(approved ? 'Отзыв одобрен! ✓' : 'Одобрение снято')
-      loadReviews()
-    } catch (error: any) {
-      toast.error('Ошибка', { description: error.message })
+      fetchReviews()
+    } catch (error) {
+      console.error('Error deleting review:', error)
+      alert('Ошибка при удалении отзыва')
     }
   }
 
-  const handleHide = async (reviewId: string, hidden: boolean) => {
-    try {
-      const response = await fetch(`/api/reviews/${reviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_hidden: hidden }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to update review')
-      }
-
-      toast.success(hidden ? 'Отзыв скрыт' : 'Отзыв показан')
-      loadReviews()
-    } catch (error: any) {
-      toast.error('Ошибка', { description: error.message })
-    }
+  const clearFilters = () => {
+    setProfileFilter('')
+    setUserFilter('')
+    setPage(1)
   }
 
-  if (userLoading || isLoading) {
+  const renderStars = (rating: number) => {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            className={`w-4 h-4 ${
+              star <= rating
+                ? 'fill-orange-500 text-orange-500'
+                : 'text-slate-300'
+            }`}
+          />
+        ))}
       </div>
     )
   }
 
-  const pendingReviews = reviews.filter(r => !r.is_approved)
-  const approvedReviews = reviews.filter(r => r.is_approved && !r.is_hidden)
-  const hiddenReviews = reviews.filter(r => r.is_hidden)
+  if (isLoading && reviews.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Модерация отзывов</h1>
-        <p className="text-muted-foreground mt-2">
-          Проверка и управление отзывами
-        </p>
+    <div className="w-full px-2 sm:container sm:mx-auto sm:px-6 py-6 space-y-6">
+      {/* Заголовок */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Отзывы</h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Всего отзывов: <span className="font-semibold">{total}</span>
+          </p>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{reviews.length}</div>
-            <p className="text-xs text-muted-foreground">Всего</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-yellow-600">
-              {pendingReviews.length}
-            </div>
-            <p className="text-xs text-muted-foreground">На модерации</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600">
-              {approvedReviews.length}
-            </div>
-            <p className="text-xs text-muted-foreground">Одобрено</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-gray-600">
-              {hiddenReviews.length}
-            </div>
-            <p className="text-xs text-muted-foreground">Скрыто</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tabs */}
-      <Tabs defaultValue="pending">
-        <TabsList>
-          <TabsTrigger value="pending">
-            На модерации ({pendingReviews.length})
-          </TabsTrigger>
-          <TabsTrigger value="approved">
-            Одобрено ({approvedReviews.length})
-          </TabsTrigger>
-          <TabsTrigger value="hidden">
-            Скрыто ({hiddenReviews.length})
-          </TabsTrigger>
-          <TabsTrigger value="all">
-            Все ({reviews.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pending" className="space-y-4 mt-6">
-          {pendingReviews.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  Нет отзывов на модерации
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            pendingReviews.map((review) => (
-              <ReviewCard
-                key={review.id}
-                review={review}
-                onApprove={handleApprove}
-                onHide={handleHide}
-              />
-            ))
+      {/* Фильтры */}
+      <Card className="p-4 rounded-[24px] border-none shadow-sm">
+        <div className="flex items-center gap-4 flex-wrap">
+          <Filter className="w-5 h-5 text-slate-400" />
+          <input
+            type="text"
+            placeholder="ID профиля..."
+            value={profileFilter}
+            onChange={(e) => setProfileFilter(e.target.value)}
+            className="px-3 py-2 rounded-[18px] border border-slate-200 text-sm flex-1 min-w-[200px]"
+          />
+          <input
+            type="text"
+            placeholder="ID пользователя..."
+            value={userFilter}
+            onChange={(e) => setUserFilter(e.target.value)}
+            className="px-3 py-2 rounded-[18px] border border-slate-200 text-sm flex-1 min-w-[200px]"
+          />
+          {(profileFilter || userFilter) && (
+            <Button
+              onClick={clearFilters}
+              variant="ghost"
+              size="sm"
+              className="gap-2"
+            >
+              <X className="w-4 h-4" />
+              Очистить
+            </Button>
           )}
-        </TabsContent>
+        </div>
+      </Card>
 
-        <TabsContent value="approved" className="space-y-4 mt-6">
-          {approvedReviews.map((review) => (
-            <ReviewCard
-              key={review.id}
-              review={review}
-              onApprove={handleApprove}
-              onHide={handleHide}
-            />
-          ))}
-        </TabsContent>
+      {/* Список отзывов */}
+      <div className="space-y-4">
+        {reviews.map((review) => (
+          <Card key={review.id} className="p-6 rounded-[24px] border-none shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 space-y-3">
+                {/* Рейтинг и дата */}
+                <div className="flex items-center gap-4 flex-wrap">
+                  {renderStars(review.rating)}
+                  <span className="text-sm text-slate-500">
+                    {format(new Date(review.created_at), 'dd MMM yyyy, HH:mm', { locale: ru })}
+                  </span>
+                </div>
 
-        <TabsContent value="hidden" className="space-y-4 mt-6">
-          {hiddenReviews.map((review) => (
-            <ReviewCard
-              key={review.id}
-              review={review}
-              onApprove={handleApprove}
-              onHide={handleHide}
-            />
-          ))}
-        </TabsContent>
+                {/* Текст отзыва */}
+                {review.comment && (
+                  <p className="text-sm text-slate-700 leading-relaxed">
+                    {review.comment}
+                  </p>
+                )}
 
-        <TabsContent value="all" className="space-y-4 mt-6">
-          {reviews.map((review) => (
-            <ReviewCard
-              key={review.id}
-              review={review}
-              onApprove={handleApprove}
-              onHide={handleHide}
-            />
-          ))}
-        </TabsContent>
-      </Tabs>
+                {/* Профиль */}
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                  <span className="text-xs text-slate-500">Профиль:</span>
+                  <Link
+                    href={`/profiles/${review.profiles.slug}`}
+                    target="_blank"
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                  >
+                    {review.profiles.display_name}
+                    <ExternalLink className="w-3 h-3" />
+                  </Link>
+                  {review.profiles.category && (
+                    <Badge variant="outline" className="rounded-full text-xs">
+                      {review.profiles.category}
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Автор */}
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-slate-400" />
+                  <span className="text-sm text-slate-600">
+                    {review.users
+                      ? review.users.full_name || review.users.email
+                      : 'Аноним'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Кнопка удаления */}
+              <Button
+                onClick={() => handleDelete(review.id)}
+                variant="ghost"
+                size="sm"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </Card>
+        ))}
+
+        {reviews.length === 0 && (
+          <Card className="p-12 rounded-[24px] border-none shadow-sm text-center">
+            <Star className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-500">Отзывов не найдено</p>
+          </Card>
+        )}
+      </div>
+
+      {/* Пагинация */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1 || isLoading}
+            variant="outline"
+            size="sm"
+          >
+            Назад
+          </Button>
+          <span className="text-sm text-slate-600">
+            Страница {page} из {totalPages}
+          </span>
+          <Button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages || isLoading}
+            variant="outline"
+            size="sm"
+          >
+            Вперёд
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
 
-function ReviewCard({
-  review,
-  onApprove,
-  onHide,
-}: {
-  review: any
-  onApprove: (id: string, approved: boolean) => void
-  onHide: (id: string, hidden: boolean) => void
-}) {
-  const author = review.authors
-  const profile = review.profiles
-
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="space-y-4">
-          {/* Header */}
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-4 flex-1">
-              <div className="flex-shrink-0 h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-                <span className="text-sm font-semibold">
-                  {author?.full_name?.charAt(0) || 'A'}
-                </span>
-              </div>
-              <div>
-                <p className="font-semibold">{author?.full_name || 'Аноним'}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`h-4 w-4 ${
-                          i < review.rating
-                            ? 'fill-yellow-400 text-yellow-400'
-                            : 'text-gray-300'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(review.created_at), 'dd MMM yyyy', { locale: ru })}
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Профиль: <a href={`/profiles/${profile?.slug}`} className="hover:underline">
-                    {profile?.display_name}
-                  </a>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              {!review.is_approved && (
-                <Badge variant="outline" className="bg-yellow-50">
-                  На модерации
-                </Badge>
-              )}
-              {review.is_approved && (
-                <Badge className="bg-green-500">
-                  Одобрено
-                </Badge>
-              )}
-              {review.is_hidden && (
-                <Badge variant="destructive">
-                  Скрыто
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          {/* Comment */}
-          <p className="text-sm whitespace-pre-wrap">{review.comment}</p>
-
-          {/* Actions */}
-          <div className="flex gap-2 pt-4 border-t">
-            {!review.is_approved ? (
-              <Button
-                size="sm"
-                onClick={() => onApprove(review.id, true)}
-              >
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Одобрить
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onApprove(review.id, false)}
-              >
-                <XCircle className="h-4 w-4 mr-2" />
-                Снять одобрение
-              </Button>
-            )}
-
-            {!review.is_hidden ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onHide(review.id, true)}
-              >
-                <EyeOff className="h-4 w-4 mr-2" />
-                Скрыть
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onHide(review.id, false)}
-              >
-                <Eye className="h-4 w-4 mr-2" />
-                Показать
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 

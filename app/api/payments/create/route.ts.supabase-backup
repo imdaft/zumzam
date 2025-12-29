@@ -1,0 +1,149 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { createPayment, formatAmount } from '@/lib/payments/yookassa'
+import { logger } from '@/lib/logger'
+import type { PaymentType } from '@/lib/payments/types'
+
+/**
+ * POST /api/payments/create
+ * Создание платежа
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { 
+      amount,           // Сумма в рублях (число)
+      type,             // Тип платежа: subscription | promotion
+      description,      // Описание
+      subscriptionPlanId, // ID тарифа (для subscription)
+      campaignId,       // ID рекламной кампании (для promotion)
+      returnUrl,        // URL возврата после оплаты
+      customerEmail,    // Email для чека
+      customerPhone,    // Телефон для чека
+    } = body
+
+    // Валидация
+    if (!amount || amount <= 0) {
+      return NextResponse.json(
+        { error: 'Некорректная сумма' },
+        { status: 400 }
+      )
+    }
+
+    if (!type || !['subscription', 'promotion'].includes(type)) {
+      return NextResponse.json(
+        { error: 'Некорректный тип платежа' },
+        { status: 400 }
+      )
+    }
+
+    if (!description) {
+      return NextResponse.json(
+        { error: 'Описание обязательно' },
+        { status: 400 }
+      )
+    }
+
+    // Определяем return URL
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4000'
+    const finalReturnUrl = returnUrl || `${baseUrl}/payments/result`
+
+    // Создаём платёж в ЮКасса
+    const result = await createPayment({
+      amount: formatAmount(amount),
+      description,
+      capture: true,  // Автоматическое подтверждение
+      confirmation: {
+        type: 'redirect',
+        return_url: finalReturnUrl,
+      },
+      metadata: {
+        type: type as PaymentType,
+        user_id: user.id,
+        subscription_plan_id: subscriptionPlanId,
+        campaign_id: campaignId,
+      },
+      // Чек (если есть данные)
+      ...(customerEmail || customerPhone ? {
+        receipt: {
+          customer: {
+            email: customerEmail,
+            phone: customerPhone,
+          },
+          items: [{
+            description: description.substring(0, 128),
+            quantity: '1',
+            amount: formatAmount(amount),
+            vat_code: 1,  // Без НДС
+            payment_mode: 'full_payment',
+            payment_subject: 'service',
+          }]
+        }
+      } : {})
+    })
+
+    if (!result.success) {
+      logger.error('[Payments API] Payment creation failed', { error: result.error })
+      return NextResponse.json(
+        { error: result.error || 'Ошибка создания платежа' },
+        { status: 500 }
+      )
+    }
+
+    // Сохраняем платёж в БД (таблица для внутренних платежей платформы)
+    const { error: dbError } = await supabase
+      .from('platform_payments')
+      .insert({
+        yookassa_id: result.payment!.id,
+        user_id: user.id,
+        type,
+        amount,
+        currency: 'RUB',
+        status: result.payment!.status,
+        description,
+        metadata: {
+          subscription_plan_id: subscriptionPlanId,
+          campaign_id: campaignId,
+        }
+      })
+
+    if (dbError) {
+      logger.error('[Payments API] DB insert error', dbError)
+      // Не возвращаем ошибку — платёж уже создан в ЮКасса
+    }
+
+    logger.info('[Payments API] Payment created', {
+      paymentId: result.payment!.id,
+      userId: user.id,
+      type,
+      amount
+    })
+
+    return NextResponse.json({
+      success: true,
+      paymentId: result.payment!.id,
+      confirmationUrl: result.confirmationUrl,
+      status: result.payment!.status,
+    })
+
+  } catch (error: any) {
+    logger.error('[Payments API] Unexpected error', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

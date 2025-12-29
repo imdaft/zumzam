@@ -30,17 +30,71 @@ export const profileSchema = z.object({
   
   city: z
     .string()
-    .min(1, 'Город обязателен'),
+    .optional(), // Сделали опциональным, так как берем из locations
   
   address: z
     .string()
     .max(200, 'Адрес слишком длинный')
     .optional(),
+
+  category: z.enum([
+    'venue', 
+    'animator', 
+    'agency', 
+    'show', 
+    'quest', 
+    'master_class', 
+    'photographer'
+  ], {
+    required_error: 'Выберите категорию профиля',
+  }),
+
+  secondary_categories: z
+    .array(
+      z.enum([
+        'venue', 
+        'animator', 
+        'agency', 
+        'show', 
+        'quest', 
+        'master_class', 
+        'photographer'
+      ])
+    )
+    .optional()
+    .default([]),
+
+  // 🎯 НОВАЯ СИСТЕМА КЛАССИФИКАЦИИ
+  primary_venue_type: z
+    .string()
+    .optional(),
   
-  tags: z
+  activities: z
     .array(z.string())
-    .min(1, 'Добавьте хотя бы один тег')
-    .max(10, 'Максимум 10 тегов'),
+    .optional()
+    .default([]),
+  
+  primary_services: z
+    .array(z.string())
+    .optional()
+    .default([]),
+  
+  additional_services: z
+    .array(z.string())
+    .optional()
+    .default([]),
+  
+  business_models: z
+    .array(z.enum(['rental_only', 'tickets_freeplay', 'packages_turnkey', 'hybrid']))
+    .optional()
+    .default([]),
+  
+  services: z
+    .array(z.string())
+    .optional()
+    .default([]),
+
+  details: z.any().optional(),
   
   price_range: z
     .enum(['$', '$$', '$$$'], {
@@ -72,20 +126,32 @@ export const profileSchema = z.object({
     .optional()
     .or(z.literal('')),
   
-  social_links: z
-    .object({
-      vk: z.string().url('Некорректная ссылка VK').optional().or(z.literal('')),
-      instagram: z.string().url('Некорректная ссылка Instagram').optional().or(z.literal('')),
-      telegram: z.string().optional().or(z.literal('')),
-      youtube: z.string().url('Некорректная ссылка YouTube').optional().or(z.literal('')),
-    })
-    .optional(),
+    social_links: z
+      .object({
+        vk: z.string().url('Некорректная ссылка VK').optional().or(z.literal('')),
+        instagram: z.string().url('Некорректная ссылка Instagram').optional().or(z.literal('')),
+        tiktok: z.string().url('Некорректная ссылка TikTok').optional().or(z.literal('')),
+        telegram: z.string().optional().or(z.literal('')),
+        youtube: z.string().url('Некорректная ссылка YouTube').optional().or(z.literal('')),
+      })
+      .optional(),
+  
+  locations_menu_label: z
+    .string()
+    .max(50, 'Название слишком длинное')
+    .optional()
+    .or(z.literal('')),
   
   portfolio_url: z
     .string()
     .url('Некорректный URL портфолио')
     .optional()
     .or(z.literal('')),
+  
+  is_published: z
+    .boolean()
+    .default(false)
+    .optional(),
 })
 
 export type ProfileInput = z.infer<typeof profileSchema>
@@ -100,7 +166,6 @@ export const profileUpdateSchema = z.object({
   description: z.string().min(50).max(5000).optional(),
   city: z.string().min(1).optional(),
   address: z.string().max(200).optional(),
-  tags: z.array(z.string()).min(1).max(10).optional(),
   price_range: z.enum(['$', '$$', '$$$']).optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
@@ -108,6 +173,7 @@ export const profileUpdateSchema = z.object({
   social_links: z.object({
     vk: z.string().url().optional().or(z.literal('')),
     instagram: z.string().url().optional().or(z.literal('')),
+    tiktok: z.string().url().optional().or(z.literal('')),
     telegram: z.string().optional().or(z.literal('')),
     youtube: z.string().url().optional().or(z.literal('')),
   }).optional(),
@@ -166,61 +232,4 @@ export function generateSlug(name: string): string {
     // Убираем дефисы в начале и конце
     .replace(/^-|-$/g, '')
 }
-
-/**
- * Список популярных тегов для подсказок
- */
-export const POPULAR_TAGS = [
-  // Типы мероприятий
-  'День рождения',
-  'Выпускной',
-  'Новый год',
-  'Корпоратив',
-  'Свадьба',
-  'Крестины',
-  
-  // Возрастные категории
-  '0-3 года',
-  '3-6 лет',
-  '6-9 лет',
-  '9-12 лет',
-  '12+ лет',
-  
-  // Форматы
-  'Онлайн',
-  'Офлайн',
-  'Выездное',
-  'В студии',
-  
-  // Направления
-  'Аниматоры',
-  'Праздники',
-  'Кружки',
-  'Мастер-классы',
-  'Квесты',
-  'Шоу-программы',
-  'Фотосессии',
-  'Научное шоу',
-  'Творческие занятия',
-  'Спорт',
-  
-  // Персонажи
-  'Супергерои',
-  'Принцессы',
-  'Мультяшки',
-  'Сказочные герои',
-  'Пираты',
-  'Феи',
-  
-  // Особенности
-  'С реквизитом',
-  'С костюмами',
-  'С декорациями',
-  'Интерактив',
-  'Игры',
-  'Конкурсы',
-  'Музыка',
-  'Танцы',
-]
-
 

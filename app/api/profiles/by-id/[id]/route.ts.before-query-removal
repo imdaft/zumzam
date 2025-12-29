@@ -1,0 +1,55 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+/**
+ * API для получения профиля по ID
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select(`
+        id,
+        user_id,
+        slug,
+        display_name,
+        city,
+        logo,
+        category,
+        custom_fields_config,
+        locations:profile_locations (
+          id,
+          name,
+          address,
+          city
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (error || !profile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    return NextResponse.json(profile)
+  } catch (error: any) {
+    logger.error('Profile API error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+

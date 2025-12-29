@@ -1,0 +1,254 @@
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+interface RouteParams {
+  params: Promise<{
+    id: string
+  }>
+}
+
+/**
+ * GET /api/orders/[id]/messages - Получить сообщения заказа
+ * АДАПТЕР: Использует единую систему чатов (conversations/messages)
+ * но возвращает данные в формате, совместимом с order_messages для фронтенда
+ */
+export async function GET(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    const orderId = params.id
+    const supabase = await createClient()
+    
+    // Проверка авторизации
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // 1. Получаем заказ и conversation_id
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, client_id, provider_id, conversation_id, profile_id')
+      .eq('id', orderId)
+      .single()
+
+    if (orderError || !order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Проверка прав доступа
+    if (order.client_id !== user.id && order.provider_id !== user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    let conversationId = order.conversation_id
+
+    // Если нет привязанного диалога, пытаемся найти существующий по source_id
+    if (!conversationId) {
+      const { data: existingConv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('source_type', 'order')
+        .eq('source_id', orderId)
+        .single()
+      
+      if (existingConv) {
+        conversationId = existingConv.id
+        // Асинхронно привязываем (не блокируем ответ)
+        supabase.from('orders').update({ conversation_id: conversationId }).eq('id', orderId).then()
+      }
+    }
+
+    // Если диалога всё ещё нет - значит сообщений нет
+    if (!conversationId) {
+      return NextResponse.json({ messages: [] })
+    }
+
+    // 2. Читаем сообщения из единой таблицы messages
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('[Order Messages GET] Error:', error)
+      throw error
+    }
+
+    // 3. Маппим в формат order_messages для совместимости с UI
+    const mappedMessages = (messages || []).map(msg => {
+      // Определяем роль отправителя
+      let senderRole = 'system'
+      if (msg.sender_id === order.client_id) senderRole = 'client'
+      else if (msg.sender_id === order.provider_id) senderRole = 'provider'
+
+      return {
+        id: msg.id,
+        order_id: orderId,
+        sender_role: senderRole,
+        message: msg.content, // content -> message
+        is_read: !!msg.read_at,
+        created_at: msg.created_at,
+        sender_id: msg.sender_id // Добавляем оригинал на всякий случай
+      }
+    })
+
+    return NextResponse.json({ messages: mappedMessages })
+  } catch (error: any) {
+    console.error('Get messages error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch messages' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/orders/[id]/messages - Создать сообщение в заказе
+ * АДАПТЕР: Создает диалог (если нет) и пишет в messages
+ */
+export async function POST(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    const orderId = params.id
+    const supabase = await createClient()
+    
+    // Проверка авторизации
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { message, sender_role } = body
+
+    if (!message) {
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+    }
+
+    // 1. Получаем заказ
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, client_id, provider_id, conversation_id, profile_id')
+      .eq('id', orderId)
+      .single()
+
+    if (orderError || !order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Проверка прав
+    if (order.client_id !== user.id && order.provider_id !== user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    let conversationId = order.conversation_id
+
+    // 2. Если диалога нет - создаем через RPC
+    if (!conversationId) {
+      // Определяем второго участника
+      const otherId = user.id === order.client_id ? order.provider_id : order.client_id
+
+      const { data: newConvId, error: createError } = await supabase.rpc('get_or_create_conversation', {
+        p_source_type: 'order',
+        p_source_id: orderId,
+        p_participant_1: user.id,
+        p_participant_2: otherId,
+        p_profile_id: order.profile_id
+      })
+
+      if (createError || !newConvId) {
+        console.error('Error creating conversation:', createError)
+        throw new Error('Failed to create conversation')
+      }
+
+      conversationId = newConvId
+      
+      // Привязываем к заказу
+      await supabase.from('orders').update({ conversation_id: conversationId }).eq('id', orderId)
+    }
+
+    // 3. Создаем сообщение в messages
+    const { data: newMessage, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: message.trim(),
+      })
+      .select()
+      .single()
+
+    if (insertError) {
+      console.error('[Order Messages POST] Insert error:', insertError)
+      throw insertError
+    }
+
+    // 4. Возвращаем в формате order_messages
+    const mappedMessage = {
+      id: newMessage.id,
+      order_id: orderId,
+      sender_role: sender_role || (user.id === order.client_id ? 'client' : 'provider'),
+      message: newMessage.content,
+      is_read: false,
+      created_at: newMessage.created_at,
+      sender_id: newMessage.sender_id
+    }
+
+    return NextResponse.json({ message: mappedMessage }, { status: 201 })
+  } catch (error: any) {
+    console.error('Create message error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to create message' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/orders/[id]/messages - Пометить сообщения как прочитанные
+ * АДАПТЕР: Обновляет read_at в messages
+ */
+export async function PATCH(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    const orderId = params.id
+    const supabase = await createClient()
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Получаем conversation_id через заказ
+    const { data: order } = await supabase
+      .from('orders')
+      .select('conversation_id')
+      .eq('id', orderId)
+      .single()
+
+    if (!order?.conversation_id) {
+      return NextResponse.json({ success: true }) // Нет чата - нечего читать
+    }
+
+    // Обновляем read_at для всех чужих сообщений в этом диалоге
+    const { error } = await supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('conversation_id', order.conversation_id)
+      .neq('sender_id', user.id) // Только чужие
+      .is('read_at', null)       // Только непрочитанные
+
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Mark read error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to mark messages as read' },
+      { status: 500 }
+    )
+  }
+}

@@ -1,0 +1,294 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { 
+  formatRequestHashtags, 
+  TELEGRAM_CATEGORY_HASHTAGS,
+} from '@/lib/types/board-subscription'
+import { CATEGORIES, CLIENT_TYPES } from '@/lib/types/order-request'
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID // например: @zumzam_orders или -1001234567890
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://zumzam.ru'
+
+/**
+ * POST /api/telegram/publish-request
+ * Публикация объявления в Telegram-канал
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Проверяем API ключ для внутренних вызовов
+    const apiKey = request.headers.get('x-api-key')
+    if (apiKey !== process.env.INTERNAL_API_KEY) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) {
+      logger.warn('[Telegram Publish] Bot token or channel ID not configured')
+      return NextResponse.json({ error: 'Telegram not configured' }, { status: 500 })
+    }
+
+    const { requestId } = await request.json()
+
+    if (!requestId) {
+      return NextResponse.json({ error: 'requestId required' }, { status: 400 })
+    }
+
+    // Supabase client removed
+
+    // Получаем объявление
+    const { data: orderRequest, error } = await supabase
+      .from('order_requests')
+      .select('*')
+      .eq('id', requestId)
+      .single()
+
+    if (error || !orderRequest) {
+      logger.error('[Telegram Publish] Request not found', { requestId, error })
+      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    }
+
+    // Проверяем, не опубликовано ли уже
+    const { data: existingPost } = await supabase
+      .from('telegram_request_posts')
+      .select('id')
+      .eq('request_id', requestId)
+      .single()
+
+    if (existingPost) {
+      return NextResponse.json({ 
+        error: 'Already published',
+        postId: existingPost.id 
+      }, { status: 409 })
+    }
+
+    // Форматируем сообщение
+    const message = formatTelegramMessage(orderRequest)
+
+    // Отправляем в Telegram
+    const telegramResponse = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHANNEL_ID,
+          text: message,
+          parse_mode: 'HTML',
+          disable_web_page_preview: false,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '📋 Подробнее', url: `${SITE_URL}/board/${requestId}` },
+                { text: '✉️ Откликнуться', url: `${SITE_URL}/board/${requestId}#respond` },
+              ],
+            ],
+          },
+        }),
+      }
+    )
+
+    const telegramResult = await telegramResponse.json()
+
+    if (!telegramResult.ok) {
+      logger.error('[Telegram Publish] Failed to send message', { 
+        requestId, 
+        error: telegramResult 
+      })
+      return NextResponse.json({ 
+        error: 'Failed to publish to Telegram',
+        details: telegramResult.description 
+      }, { status: 500 })
+    }
+
+    // Сохраняем информацию о публикации
+    const { data: post, error: postError } = await supabase
+      .from('telegram_request_posts')
+      .insert({
+        request_id: requestId,
+        message_id: telegramResult.result.message_id,
+        channel_id: TELEGRAM_CHANNEL_ID,
+        posted_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+
+    if (postError) {
+      logger.error('[Telegram Publish] Failed to save post record', { postError })
+    }
+
+    // Обновляем объявление
+    await supabase
+      .from('order_requests')
+      .update({ telegram_posted_at: new Date().toISOString() })
+      .eq('id', requestId)
+
+    logger.info('[Telegram Publish] Request published', { 
+      requestId, 
+      messageId: telegramResult.result.message_id 
+    })
+
+    return NextResponse.json({ 
+      success: true,
+      messageId: telegramResult.result.message_id,
+      postId: post?.id,
+    })
+  } catch (error) {
+    logger.error('[Telegram Publish] Unexpected error', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * Форматирование сообщения для Telegram
+ */
+function formatTelegramMessage(request: {
+  id: string
+  client_type: string
+  category: string
+  title: string
+  description?: string
+  event_date: string
+  event_time?: string
+  city: string
+  district?: string
+  children_count?: number
+  children_age_from?: number
+  children_age_to?: number
+  budget?: number
+  budget_negotiable?: boolean
+  is_urgent: boolean
+  details?: Record<string, any>
+  listing_plan_id?: string
+}): string {
+  // Хештеги
+  const hashtags = formatRequestHashtags({
+    category: request.category as any,
+    city: request.city,
+    is_urgent: request.is_urgent,
+    client_type: request.client_type as any,
+    listing_plan_id: request.listing_plan_id,
+  })
+
+  // Эмодзи категории
+  const categoryInfo = CATEGORIES.find(c => c.id === request.category)
+  const categoryEmoji = categoryInfo?.emoji || '✨'
+
+  // Тип заказчика
+  const clientTypeInfo = CLIENT_TYPES.find(c => c.id === request.client_type)
+  const clientTypeLabel = clientTypeInfo 
+    ? `${clientTypeInfo.emoji} ${clientTypeInfo.label}`
+    : '👤 Клиент'
+
+  // Формируем сообщение
+  let message = `📢 <b>НОВАЯ ЗАЯВКА</b> ${hashtags.join(' ')}\n\n`
+
+  // Тип заказчика
+  message += `${clientTypeLabel}\n`
+
+  // Место
+  message += `📍 ${request.city}`
+  if (request.district) {
+    message += `, ${request.district}`
+  }
+  message += '\n'
+
+  // Дата
+  const date = new Date(request.event_date)
+  const dateStr = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+  message += `📅 ${dateStr}`
+  if (request.event_time) {
+    message += `, ${request.event_time}`
+  }
+  message += '\n'
+
+  // Дети
+  if (request.children_count) {
+    message += `👧 ${request.children_count} ${pluralize(request.children_count, 'ребёнок', 'ребёнка', 'детей')}`
+    if (request.children_age_from && request.children_age_to) {
+      message += `, ${request.children_age_from}–${request.children_age_to} лет`
+    }
+    message += '\n'
+  }
+
+  // Бюджет
+  if (request.budget) {
+    message += `💰 Бюджет: ${request.budget.toLocaleString('ru-RU')} ₽`
+    if (request.budget_negotiable) {
+      message += ' (договорной)'
+    }
+    message += '\n'
+  } else if (request.budget_negotiable) {
+    message += `💰 Бюджет: договорной\n`
+  }
+
+  message += '\n'
+
+  // Заголовок
+  if (request.title) {
+    message += `<b>${escapeHtml(request.title)}</b>\n`
+  }
+
+  // Описание (урезанное)
+  if (request.description) {
+    const desc = request.description.slice(0, 300)
+    message += escapeHtml(desc)
+    if (request.description.length > 300) {
+      message += '...'
+    }
+    message += '\n'
+  }
+
+  // Детали
+  const details = request.details || {}
+  const detailsLines: string[] = []
+  
+  if (details.hasOwnCostume) detailsLines.push('✅ Костюм свой')
+  if (details.hasOwnProps) detailsLines.push('✅ Реквизит свой')
+  if (details.hasOwnSpeaker) detailsLines.push('✅ Колонка своя')
+  if (details.speakerProvided) detailsLines.push('🔊 Колонка будет на месте')
+  if (details.character) detailsLines.push(`🎭 Персонаж: ${details.character}`)
+
+  if (detailsLines.length > 0) {
+    message += '\n' + detailsLines.join('\n')
+  }
+
+  return message.trim()
+}
+
+/**
+ * Склонение слов
+ */
+function pluralize(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+
+  if (mod100 >= 11 && mod100 <= 19) return many
+  if (mod10 === 1) return one
+  if (mod10 >= 2 && mod10 <= 4) return few
+  return many
+}
+
+/**
+ * Экранирование HTML для Telegram
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+
+
+
+
+

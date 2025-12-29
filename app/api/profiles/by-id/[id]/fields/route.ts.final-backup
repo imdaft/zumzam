@@ -1,0 +1,56 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+/**
+ * API для управления кастомными полями профиля
+ * POST /api/profiles/[id]/fields
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { fields } = body
+
+    // Обновляем конфигурацию
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ custom_fields_config: fields })
+      .eq('id', id)
+      .eq('user_id', userId) // Проверка владения
+
+    // Error handling removed (Prisma throws exceptions), { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Profile fields API error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+

@@ -1,0 +1,57 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+// GET /api/messages/reactions/batch?messageIds=id1,id2,id3
+// ОПТИМИЗИРОВАНО: загружает реакции для нескольких сообщений одним запросом
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Необходимо авторизоваться' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const messageIdsParam = searchParams.get('messageIds')
+    
+    if (!messageIdsParam) {
+      return NextResponse.json({ reactions: {} })
+    }
+
+    const messageIds = messageIdsParam.split(',').filter(Boolean)
+    
+    if (messageIds.length === 0) {
+      return NextResponse.json({ reactions: {} })
+    }
+
+    // ОДИН запрос для всех реакций
+    const { data: reactions, error } = await supabase
+      .from('message_reactions')
+      .select('message_id, emoji, user_id')
+      .in('message_id', messageIds)
+
+    if (error) {
+      console.error('[Batch Reactions API] Error:', error)
+      return NextResponse.json({ error: 'Ошибка получения реакций' }, { status: 500 })
+    }
+
+    // Группируем по message_id
+    const reactionsMap: Record<string, { emoji: string; user_id: string }[]> = {}
+    
+    for (const reaction of reactions || []) {
+      if (!reactionsMap[reaction.message_id]) {
+        reactionsMap[reaction.message_id] = []
+      }
+      reactionsMap[reaction.message_id].push({
+        emoji: reaction.emoji,
+        user_id: reaction.user_id
+      })
+    }
+
+    return NextResponse.json({ reactions: reactionsMap })
+  } catch (error) {
+    console.error('[Batch Reactions API] Error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}

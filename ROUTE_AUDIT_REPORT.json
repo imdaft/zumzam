@@ -1,0 +1,52 @@
+{
+  "timestamp": "2025-12-27T00:58:10.494Z",
+  "total_files": 183,
+  "total_issues": 5,
+  "issues": {
+    "legacy_supabase": [
+      "app/api/2gis-reviews/[locationId]/route.ts",
+      "app/api/advertising/upload-image/route.ts",
+      "app/api/category-images/upload/route.ts",
+      "app/api/yandex-reviews/[locationId]/route.ts"
+    ],
+    "wrong_auth": [],
+    "syntax_errors": [],
+    "empty_files": [
+      "app/api/admin/cleanup-non-venue-locations/route.ts"
+    ],
+    "missing_fields": [],
+    "no_prisma_import": [],
+    "decimal_not_converted": [
+      "app/api/2gis-reviews/parse/route.ts",
+      "app/api/admin/generate-embeddings/route.ts",
+      "app/api/admin/reviews/route.ts",
+      "app/api/admin/reviews/[id]/route.ts",
+      "app/api/advertising/slots/route.ts",
+      "app/api/ai/request-draft/route.ts",
+      "app/api/board-subscriptions/route.ts",
+      "app/api/board-subscriptions/[id]/route.ts",
+      "app/api/bookings/route.ts",
+      "app/api/bookings/[id]/route.ts",
+      "app/api/cart/route.ts",
+      "app/api/cart/[id]/route.ts",
+      "app/api/faq/generate-embeddings/route.ts",
+      "app/api/favorites/route.ts",
+      "app/api/generate-legal-docs/route.ts",
+      "app/api/geography/route.ts",
+      "app/api/geography/[id]/route.ts",
+      "app/api/master-class-programs/[id]/route.ts",
+      "app/api/orders/[id]/route.ts",
+      "app/api/payments/create/route.ts",
+      "app/api/profiles/route.ts",
+      "app/api/profiles/by-slug/[slug]/route.ts",
+      "app/api/profiles/me/route.ts",
+      "app/api/profiles/public/route.ts",
+      "app/api/requests/route.ts",
+      "app/api/requests/responses/[id]/route.ts",
+      "app/api/requests/[id]/route.ts",
+      "app/api/requests/[id]/respond/route.ts",
+      "app/api/search/semantic/route.ts",
+      "app/api/services/[id]/route.ts"
+    ]
+  }
+}

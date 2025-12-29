@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дерево создания профилей ZumZam</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        
+        .central-node {
+            text-align: center;
+            margin: 40px 0;
+            padding: 30px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            border-radius: 20px;
+            color: white;
+            box-shadow: 0 10px 30px rgba(255, 107, 107, 0.3);
+        }
+        
+        .central-node h2 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 40px;
+        }
+        
+        .category {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            border-left: 5px solid;
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+        
+        .category:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        .category.venue { border-left-color: #4ecdc4; }
+        .category.animator { border-left-color: #95e1d3; }
+        .category.show { border-left-color: #f38181; }
+        .category.agency { border-left-color: #aa96da; }
+        .category.quest { border-left-color: #fcbad3; }
+        .category.master-class { border-left-color: #ffd3a5; }
+        .category.photographer { border-left-color: #a8e6cf; }
+        
+        .category-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .category-icon {
+            font-size: 2em;
+        }
+        
+        .category-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .category-stats {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        .subtypes {
+            margin-top: 15px;
+        }
+        
+        .subtype {
+            background: white;
+            padding: 10px 15px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border-left: 3px solid #ddd;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .subtype:hover {
+            border-left-color: #ff6b6b;
+            background: #fff5f5;
+        }
+        
+        .blocks {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        
+        .block {
+            font-size: 0.85em;
+            color: #555;
+            margin: 5px 0;
+            padding-left: 15px;
+            position: relative;
+        }
+        
+        .block:before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #ff6b6b;
+        }
+        
+        .block.required:before {
+            content: "✓";
+            color: #51cf66;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 40px;
+            border-radius: 20px;
+            max-width: 900px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 2em;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        .close:hover {
+            color: #333;
+        }
+        
+        .steps {
+            margin-top: 30px;
+        }
+        
+        .step {
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 10px;
+            border-left: 5px solid #667eea;
+        }
+        
+        .step-number {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .legend {
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌳 Дерево создания профилей</h1>
+        <p class="subtitle">Визуализация структуры визарда создания профилей для платформы ZumZam</p>
+        
+        <div class="central-node">
+            <h2>🎯 СОЗДАНИЕ ПРОФИЛЯ</h2>
+            <p>Стандартизированный процесс для всех типов профилей</p>
+        </div>
+        
+        <div class="categories">
+            <div class="category venue" onclick="showDetails('venue')">
+                <div class="category-header">
+                    <span class="category-icon">🏢</span>
+                    <span class="category-title">ПЛОЩАДКА</span>
+                </div>
+                <div class="category-stats">6 шагов • 6 подтипов</div>
+                <div class="subtypes">
+                    <div class="subtype">Детский центр</div>
+                    <div class="subtype">Лофт / Студия</div>
+                    <div class="subtype">Кафе / Ресторан</div>
+                    <div class="subtype">Парк развлечений</div>
+                    <div class="subtype">Открытая площадка</div>
+                    <div class="subtype">Другое</div>
+                </div>
+            </div>
+            
+            <div class="category animator" onclick="showDetails('animator')">
+                <div class="category-header">
+                    <span class="category-icon">👤</span>
+                    <span class="category-title">АНИМАТОР</span>
+                </div>
+                <div class="category-stats">6 шагов • Без подтипов</div>
+                <div class="blocks">
+                    <div class="block required">Специализация (типы персонажей)</div>
+                    <div class="block required">Опыт и навыки</div>
+                    <div class="block required">Фото костюмов (3+)</div>
+                </div>
+            </div>
+            
+            <div class="category show" onclick="showDetails('show')">
+                <div class="category-header">
+                    <span class="category-icon">🎪</span>
+                    <span class="category-title">ШОУ-ПРОГРАММА</span>
+                </div>
+                <div class="category-stats">6 шагов • 7 подтипов</div>
+                <div class="subtypes">
+                    <div class="subtype">Мыльные пузыри</div>
+                    <div class="subtype">Научное шоу</div>
+                    <div class="subtype">Фокусы</div>
+                    <div class="subtype">Животные</div>
+                    <div class="subtype">Криошоу</div>
+                    <div class="subtype">Световое шоу</div>
+                    <div class="subtype">Пенная вечеринка</div>
+                </div>
+            </div>
+            
+            <div class="category agency" onclick="showDetails('agency')">
+                <div class="category-header">
+                    <span class="category-icon">🏢</span>
+                    <span class="category-title">АГЕНТСТВО</span>
+                </div>
+                <div class="category-stats">6 шагов • Без подтипов</div>
+                <div class="blocks">
+                    <div class="block required">Специализация</div>
+                    <div class="block required">О компании</div>
+                    <div class="block required">Портфолио (10+ фото)</div>
+                </div>
+            </div>
+            
+            <div class="category quest" onclick="showDetails('quest')">
+                <div class="category-header">
+                    <span class="category-icon">🎯</span>
+                    <span class="category-title">КВЕСТ</span>
+                </div>
+                <div class="category-stats">6 шагов • 2 подтипа</div>
+                <div class="subtypes">
+                    <div class="subtype">На локации</div>
+                    <div class="subtype">Выездной</div>
+                </div>
+            </div>
+            
+            <div class="category master-class" onclick="showDetails('master-class')">
+                <div class="category-header">
+                    <span class="category-icon">🎨</span>
+                    <span class="category-title">МАСТЕР-КЛАСС</span>
+                </div>
+                <div class="category-stats">6 шагов • 4 подтипа</div>
+                <div class="subtypes">
+                    <div class="subtype">Творческий</div>
+                    <div class="subtype">Кулинарный</div>
+                    <div class="subtype">Научный</div>
+                    <div class="subtype">Ремесленный</div>
+                </div>
+            </div>
+            
+            <div class="category photographer" onclick="showDetails('photographer')">
+                <div class="category-header">
+                    <span class="category-icon">📷</span>
+                    <span class="category-title">ФОТО/ВИДЕО</span>
+                </div>
+                <div class="category-stats">6 шагов • 3 варианта</div>
+                <div class="subtypes">
+                    <div class="subtype">Только фото</div>
+                    <div class="subtype">Только видео</div>
+                    <div class="subtype">Фото и видео</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #51cf66;"></div>
+                <span>Обязательные блоки</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ffd43b;"></div>
+                <span>Опциональные блоки</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #4ecdc4;"></div>
+                <span>Категории профилей</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #95e1d3;"></div>
+                <span>Подтипы</span>
+            </div>
+        </div>
+    </div>
+    
+    <div id="modal" class="modal" onclick="closeModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+    
+    <script>
+        const categoryDetails = {
+            venue: {
+                title: "🏢 ПЛОЩАДКА",
+                steps: [
+                    {
+                        number: 1,
+                        name: "Выбор категории",
+                        description: "Пользователь выбирает 'Площадка'"
+                    },
+                    {
+                        number: 2,
+                        name: "Основная информация",
+                        description: "Название, описание, город, адрес"
+                    },
+                    {
+                        number: 3,
+                        name: "Выбор типа площадки",
+                        description: "Детский центр, Лофт, Кафе, Парк развлечений, Открытая площадка, Другое"
+                    },
+                    {
+                        number: 4,
+                        name: "Визуальное оформление",
+                        description: "Логотип и обложка (опционально)"
+                    },
+                    {
+                        number: 5,
+                        name: "Характеристики",
+                        description: "Специфичные блоки в зависимости от типа площадки"
+                    },
+                    {
+                        number: 6,
+                        name: "Медиа",
+                        description: "Фото площадки, видео"
+                    }
+                ],
+                subtypes: [
+                    {
+                        name: "Детский центр",
+                        blocks: ["Основные параметры", "Удобства детские", "Правила", "Услуги"]
+                    },
+                    {
+                        name: "Лофт / Студия",
+                        blocks: ["Основные параметры", "Удобства студийные", "Правила", "Декор"]
+                    },
+                    {
+                        name: "Кафе / Ресторан",
+                        blocks: ["Основные параметры", "Удобства ресторанные", "Правила", "Банкет"]
+                    }
+                ]
+            },
+            animator: {
+                title: "👤 АНИМАТОР",
+                steps: [
+                    {
+                        number: 1,
+                        name: "Выбор категории",
+                        description: "Пользователь выбирает 'Аниматор'"
+                    },
+                    {
+                        number: 2,
+                        name: "Основная информация",
+                        description: "Имя, описание, города работы"
+                    },
+                    {
+                        number: 3,
+                        name: "Визуальное оформление",
+                        description: "Фото профиля, обложка (опционально)"
+                    },
+                    {
+                        number: 4,
+                        name: "Специализация",
+                        description: "Типы персонажей, возрастные группы, типы мероприятий"
+                    },
+                    {
+                        number: 5,
+                        name: "Опыт и навыки",
+                        description: "Опыт работы, навыки, дополнительные услуги"
+                    },
+                    {
+                        number: 6,
+                        name: "Медиа",
+                        description: "Фото костюмов (обязательно 3+), видео с мероприятий"
+                    }
+                ],
+                note: "Не нужны: адрес площадки, площадь, удобства площадки"
+            }
+        };
+        
+        function showDetails(category) {
+            const modal = document.getElementById('modal');
+            const modalBody = document.getElementById('modal-body');
+            const details = categoryDetails[category];
+            
+            if (!details) {
+                modalBody.innerHTML = '<h2>Детали будут добавлены</h2>';
+                modal.style.display = 'block';
+                return;
+            }
+            
+            let html = `<h2>${details.title}</h2>`;
+            html += '<div class="steps">';
+            
+            details.steps.forEach(step => {
+                html += `
+                    <div class="step">
+                        <div class="step-number">Шаг ${step.number}: ${step.name}</div>
+                        <div>${step.description}</div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            if (details.subtypes) {
+                html += '<h3 style="margin-top: 30px;">Подтипы:</h3>';
+                details.subtypes.forEach(subtype => {
+                    html += `<div style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">`;
+                    html += `<strong>${subtype.name}</strong>`;
+                    if (subtype.blocks) {
+                        html += '<ul style="margin-top: 10px; margin-left: 20px;">';
+                        subtype.blocks.forEach(block => {
+                            html += `<li>${block}</li>`;
+                        });
+                        html += '</ul>';
+                    }
+                    html += '</div>';
+                });
+            }
+            
+            if (details.note) {
+                html += `<div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">`;
+                html += `<strong>Примечание:</strong> ${details.note}`;
+                html += '</div>';
+            }
+            
+            modalBody.innerHTML = html;
+            modal.style.display = 'block';
+        }
+        
+        function closeModal(e) {
+            if (!e || e.target.id === 'modal' || e.target.className === 'close') {
+                document.getElementById('modal').style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
+

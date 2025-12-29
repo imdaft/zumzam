@@ -1,0 +1,148 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+/**
+ * API для получения статистики по ошибкам (только для админов)
+ * GET /api/admin/errors/stats
+ * 
+ * Query параметры:
+ * - timeRange: период ('1h' | '24h' | '7d' | '30d')
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем, что пользователь - админ
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      )
+    }
+
+    const searchParams = request.nextUrl.searchParams
+    const timeRange = searchParams.get('timeRange') || '24h'
+
+    // Вычисляем временной диапазон
+    const now = new Date()
+    let since = new Date()
+    
+    switch (timeRange) {
+      case '1h':
+        since.setHours(now.getHours() - 1)
+        break
+      case '24h':
+        since.setHours(now.getHours() - 24)
+        break
+      case '7d':
+        since.setDate(now.getDate() - 7)
+        break
+      case '30d':
+        since.setDate(now.getDate() - 30)
+        break
+    }
+
+    // Получаем все ошибки за период
+    const { data: errors, error } = await supabase
+      .from('errors')
+      .select('*')
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      logger.error('[Admin Errors Stats] Query error', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch stats' },
+        { status: 500 }
+      )
+    }
+
+    // Вычисляем статистику
+    const total = errors?.length || 0
+    const critical = errors?.filter(e => e.is_critical).length || 0
+    const unresolved = errors?.filter(e => !e.is_resolved).length || 0
+    const resolved = errors?.filter(e => e.is_resolved).length || 0
+
+    // Группировка по типу
+    const byType = errors?.reduce((acc: any, error: any) => {
+      acc[error.error_type] = (acc[error.error_type] || 0) + 1
+      return acc
+    }, {})
+
+    // Топ-5 самых частых ошибок
+    const errorCounts: Record<string, { count: number, error: any }> = {}
+    errors?.forEach((error: any) => {
+      const key = error.message
+      if (!errorCounts[key]) {
+        errorCounts[key] = { count: 0, error }
+      }
+      errorCounts[key].count += 1
+    })
+
+    const topErrors = Object.values(errorCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+      .map(({ count, error }) => ({
+        message: error.message,
+        count,
+        error_type: error.error_type,
+        is_critical: error.is_critical,
+      }))
+
+    // Средняя частота ошибок в час
+    const hours = timeRange === '1h' ? 1 : timeRange === '24h' ? 24 : timeRange === '7d' ? 168 : 720
+    const avgPerHour = (total / hours).toFixed(2)
+
+    return NextResponse.json({
+      total,
+      critical,
+      unresolved,
+      resolved,
+      byType,
+      topErrors,
+      avgPerHour: parseFloat(avgPerHour),
+      timeRange,
+    })
+  } catch (error) {
+    logger.error('[Admin Errors Stats] Exception', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

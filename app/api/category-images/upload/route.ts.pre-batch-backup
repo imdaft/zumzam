@@ -1,0 +1,104 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import prisma from '@/lib/prisma'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    // Проверка прав администратора
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+    
+    console.log('[Category Upload] User:', user.email, 'Role:', profile?.role)
+    
+    if (profileError) {
+      console.error('[Category Upload] Profile error:', profileError)
+      return NextResponse.json({ 
+        error: 'Profile not found',
+        details: profileError.message 
+      }, { status: 403 })
+    }
+    
+    if (!profile || profile.role !== 'admin') {
+      console.warn('[Category Upload] Access denied. User role:', profile?.role, 'Required: admin')
+      return NextResponse.json({ 
+        error: 'Forbidden. Admin role required.',
+        hint: 'Run SET_ADMIN_ROLE.sql to grant admin access'
+      }, { status: 403 })
+    }
+    
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+    const categoryId = formData.get('categoryId') as string
+    
+    if (!file || !categoryId) {
+      return NextResponse.json({ error: 'Missing file or categoryId' }, { status: 400 })
+    }
+    
+    // Проверка типа файла
+    if (!file.type.startsWith('image/')) {
+      return NextResponse.json({ error: 'File must be an image' }, { status: 400 })
+    }
+    
+    // Проверка размера (макс 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File size must be less than 5MB' }, { status: 400 })
+    }
+    
+    // Генерируем уникальное имя файла для ОРИГИНАЛА
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${categoryId}-${Date.now()}.${fileExt}`
+    const filePath = `category-images/${fileName}`
+    
+    // Загружаем в Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('public-images')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      })
+    
+    if (uploadError) {
+      console.error('[Category Images Upload] Error uploading:', uploadError)
+      return NextResponse.json({ error: uploadError.message }, { status: 500 })
+    }
+    
+    // Получаем публичный URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('public-images')
+      .getPublicUrl(filePath)
+    
+    return NextResponse.json({ 
+      success: true, 
+      imageUrl: publicUrl,
+      filePath
+    })
+  } catch (error) {
+    console.error('[Category Images Upload] Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+

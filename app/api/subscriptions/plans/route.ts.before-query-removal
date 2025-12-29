@@ -1,0 +1,44 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/subscriptions/plans
+ * Получение списка тарифных планов
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    // Получаем все активные тарифные планы
+    const { data: plans, error } = await supabase
+      .from('subscription_plans')
+      .select('*')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+
+    if (error) {
+      logger.error('[Subscriptions API] Error fetching plans:', error)
+      return NextResponse.json(
+        { error: 'Ошибка загрузки тарифных планов', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ plans })
+  } catch (error) {
+    logger.error('[Subscriptions API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

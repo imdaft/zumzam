@@ -1,0 +1,141 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/advertising/debug
+ * Диагностика рекламных кампаний - что не так?
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const now = new Date().toISOString()
+
+    console.log('[Debug API] 🔍 Current time:', now)
+
+    // 1. Проверяем слот home_carousel
+    const { data: slot, error: slotError } = await supabase
+      .from('ad_slots')
+      .select('*')
+      .eq('slug', 'home_carousel')
+      .single()
+
+    if (slotError || !slot) {
+      return NextResponse.json({
+        error: 'Слот home_carousel не найден!',
+        slotError,
+        suggestion: 'Нужно создать слот в таблице ad_slots'
+      })
+    }
+
+    console.log('[Debug API] ✅ Slot found:', slot.id, slot.name)
+
+    // 2. Все кампании
+    const { data: allCampaigns, error: campaignsError } = await supabase
+      .from('ad_campaigns')
+      .select('id, title, status, moderation_status, start_date, end_date')
+      .order('created_at', { ascending: false })
+
+    console.log('[Debug API] 📦 All campaigns:', allCampaigns?.length || 0)
+
+    // 3. Все бронирования для этого слота
+    const { data: allBookings, error: bookingsError } = await supabase
+      .from('ad_bookings')
+      .select(`
+        *,
+        campaign:ad_campaigns(id, title, status, moderation_status)
+      `)
+      .eq('ad_slot_id', slot.id)
+
+    console.log('[Debug API] 📦 All bookings for slot:', allBookings?.length || 0)
+
+    // 4. Активные бронирования (по всем критериям)
+    const { data: activeBookings, error: activeError } = await supabase
+      .from('ad_bookings')
+      .select(`
+        *,
+        campaign:ad_campaigns(
+          id,
+          title,
+          status,
+          moderation_status,
+          image_url,
+          link_url,
+          description
+        )
+      `)
+      .eq('ad_slot_id', slot.id)
+      .eq('status', 'active')
+      .lte('start_date', now)
+      .gte('end_date', now)
+
+    console.log('[Debug API] ✅ Active bookings (by date):', activeBookings?.length || 0)
+
+    // 5. Фильтруем по approved campaigns
+    const fullyActive = activeBookings?.filter(
+      b => b.campaign?.status === 'active' && b.campaign?.moderation_status === 'approved'
+    ) || []
+
+    console.log('[Debug API] ✅ Fully active & approved:', fullyActive.length)
+
+    return NextResponse.json({
+      success: true,
+      now,
+      slot: {
+        id: slot.id,
+        name: slot.name,
+        slug: slot.slug
+      },
+      stats: {
+        totalCampaigns: allCampaigns?.length || 0,
+        totalBookingsForSlot: allBookings?.length || 0,
+        activeBookingsByDate: activeBookings?.length || 0,
+        fullyActiveAndApproved: fullyActive.length
+      },
+      allCampaigns: allCampaigns?.map(c => ({
+        id: c.id,
+        title: c.title,
+        status: c.status,
+        moderation: c.moderation_status,
+        start: c.start_date,
+        end: c.end_date,
+        isInDateRange: c.start_date <= now && c.end_date >= now
+      })),
+      allBookings: allBookings?.map(b => ({
+        id: b.id,
+        campaign_id: b.campaign_id,
+        campaign_title: (b.campaign as any)?.title,
+        campaign_status: (b.campaign as any)?.status,
+        campaign_moderation: (b.campaign as any)?.moderation_status,
+        booking_status: b.status,
+        start: b.start_date,
+        end: b.end_date,
+        isInDateRange: b.start_date <= now && b.end_date >= now,
+        whyNotActive: []
+      })).map(b => {
+        const reasons = []
+        if (b.booking_status !== 'active') reasons.push(`booking_status=${b.booking_status} (нужно active)`)
+        if (b.campaign_status !== 'active') reasons.push(`campaign_status=${b.campaign_status} (нужно active)`)
+        if (b.campaign_moderation !== 'approved') reasons.push(`moderation=${b.campaign_moderation} (нужно approved)`)
+        if (!b.isInDateRange) reasons.push(`вне диапазона дат (сейчас: ${now})`)
+        return { ...b, whyNotActive: reasons }
+      }),
+      fullyActiveBookings: fullyActive.map(b => ({
+        campaign_title: (b.campaign as any)?.title,
+        image: (b.campaign as any)?.image_url,
+        link: (b.campaign as any)?.link_url
+      }))
+    })
+  } catch (error: any) {
+    console.error('[Debug API] ❌ Error:', error)
+    return NextResponse.json(
+      { error: 'Internal error', details: error?.message },
+      { status: 500 }
+    )
+  }
+}
+
+

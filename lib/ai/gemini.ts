@@ -1,31 +1,59 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY is not defined')
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-
-// Модели
+// Модели (используем самые актуальные из доступных)
 export const MODELS = {
-  FLASH: 'gemini-2.0-flash-exp',
+  FLASH: 'gemini-2.5-flash', // Gemini 2.5 Flash - стабильная (рекомендуется)
+  FLASH_LITE: 'gemini-2.5-flash-lite', // Легковесная версия
+  PRO: 'gemini-2.5-pro', // Лучшее качество Gemini 2.5
+  FLASH_2: 'gemini-2.0-flash', // Gemini 2.0 Flash
+  FLASH_LATEST: 'gemini-flash-latest', // Всегда последняя версия Flash
+  PRO_LATEST: 'gemini-pro-latest', // Всегда последняя версия Pro
   EMBEDDING: 'text-embedding-004',
 } as const
 
+let genAI: GoogleGenerativeAI | null = null
+
+function getGenAI() {
+  if (!genAI) {
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) {
+      // Не выбрасываем ошибку сразу, чтобы не ломать импорты
+      console.warn('GEMINI_API_KEY is not defined. AI features will be disabled.')
+      return null
+    }
+    genAI = new GoogleGenerativeAI(apiKey)
+  }
+  return genAI
+}
+
 /**
- * Генерация текста через Gemini 2.0 Flash
+ * Получает базовый URL для API (для работы через прокси)
+ */
+function getBaseUrl(): string | undefined {
+  // Если задан прокси URL в env (например для Yandex Cloud)
+  // GEMINI_API_BASE_URL=https://my-proxy.workers.dev
+  return process.env.GEMINI_API_BASE_URL
+}
+
+/**
+ * Генерация текста через Gemini
  */
 export async function generateText(prompt: string, options?: {
   model?: string
   temperature?: number
   maxTokens?: number
 }) {
-  const model = genAI.getGenerativeModel({
+  const client = getGenAI()
+  if (!client) throw new Error('GEMINI_API_KEY required for generateText')
+
+  const model = client.getGenerativeModel({
     model: options?.model || MODELS.FLASH,
     generationConfig: {
       temperature: options?.temperature || 0.7,
       maxOutputTokens: options?.maxTokens || 2048,
     },
+  }, {
+    baseUrl: getBaseUrl() // Поддержка прокси
   })
 
   const result = await model.generateContent(prompt)
@@ -36,7 +64,14 @@ export async function generateText(prompt: string, options?: {
  * Streaming генерация (для чатов)
  */
 export async function* generateTextStream(prompt: string) {
-  const model = genAI.getGenerativeModel({ model: MODELS.FLASH })
+  const client = getGenAI()
+  if (!client) throw new Error('GEMINI_API_KEY required for generateTextStream')
+
+  const model = client.getGenerativeModel({ 
+    model: MODELS.FLASH 
+  }, {
+    baseUrl: getBaseUrl() // Поддержка прокси
+  })
 
   const result = await model.generateContentStream(prompt)
 
@@ -66,5 +101,4 @@ export async function generateJSON<T>(prompt: string, schema?: string): Promise<
   }
 }
 
-export default genAI
-
+export default getGenAI

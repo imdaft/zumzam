@@ -1,0 +1,162 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * GET /api/advertising/campaigns/[id]
+ * Получение информации о конкретной кампании
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createClient()
+    const resolvedParams = await params
+    const { id } = resolvedParams
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Получаем кампанию
+    const { data: campaign, error } = await supabase
+      .from('ad_campaigns')
+      .select(`
+        *,
+        profile:profiles(id, display_name, slug),
+        bookings:ad_bookings(
+          id,
+          start_date,
+          end_date,
+          status,
+          total_cost,
+          ad_slot:ad_slots(*)
+        )
+      `)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (error) {
+      console.error('[Advertising API] Error fetching campaign:', error)
+      return NextResponse.json(
+        { error: 'Кампания не найдена', details: error.message },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({ campaign })
+  } catch (error) {
+    console.error('[Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/advertising/campaigns/[id]
+ * Обновление кампании
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = await createClient()
+    const { id } = params
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+
+    // Обновляем кампанию
+    const { data: campaign, error } = await supabase
+      .from('ad_campaigns')
+      .update(body)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[Advertising API] Error updating campaign:', error)
+      return NextResponse.json(
+        { error: 'Ошибка обновления кампании', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ campaign })
+  } catch (error) {
+    console.error('[Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/advertising/campaigns/[id]
+ * Удаление кампании
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createClient()
+    const resolvedParams = await params
+    const { id } = resolvedParams
+
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Требуется авторизация' },
+        { status: 401 }
+      )
+    }
+
+    // Удаляем кампанию
+    const { error } = await supabase
+      .from('ad_campaigns')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
+
+    if (error) {
+      console.error('[Advertising API] Error deleting campaign:', error)
+      return NextResponse.json(
+        { error: 'Ошибка удаления кампании', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

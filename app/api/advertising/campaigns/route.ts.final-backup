@@ -1,0 +1,170 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/advertising/campaigns
+ * Получение списка рекламных кампаний пользователя
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    // Получаем кампании пользователя
+    const { data: campaigns, error } = await supabase
+      .from('ad_campaigns')
+      .select(`
+        *,
+        profile:profiles(id, display_name, slug),
+        bookings:ad_bookings(
+          id,
+          start_date,
+          end_date,
+          status,
+          total_cost,
+          ad_slot:ad_slots(id, name, slug)
+        )
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[Advertising API] Error fetching campaigns:', error)
+      return NextResponse.json(
+        { error: 'Ошибка загрузки кампаний', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ campaigns })
+  } catch (error) {
+    console.error('[Advertising API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/advertising/campaigns
+ * Создание новой рекламной кампании
+ */
+export async function POST(request: NextRequest) {
+  try {
+    console.log('[Advertising API] 🚀 POST request received')
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    console.log('[Advertising API] ✅ User authenticated:', userId)
+
+    const body = await request.json()
+    console.log('[Advertising API] 📦 Request body:', {
+      ...body,
+      image_url: body.image_url?.substring(0, 50) + '...'
+    })
+
+    const {
+      profile_id,
+      title,
+      description,
+      image_url,
+      link_url,
+      start_date,
+      end_date,
+      targeting = {},
+      bid_type = 'fixed',
+      bid_amount,
+      total_budget
+    } = body
+
+    // Валидация
+    if (!title || !link_url || !start_date || !end_date) {
+      console.log('[Advertising API] ❌ Validation failed')
+      return NextResponse.json(
+        { error: 'Не все обязательные поля заполнены' },
+        { status: 400 }
+      )
+    }
+
+    console.log('[Advertising API] 💾 Inserting campaign into DB...')
+
+    // Создаем кампанию
+    const { data: campaign, error } = await supabase
+      .from('ad_campaigns')
+      .insert({
+        user_id: userId,
+        profile_id,
+        title,
+        description,
+        image_url,
+        link_url,
+        start_date,
+        end_date,
+        targeting,
+        bid_type,
+        bid_amount,
+        total_budget,
+        status: 'draft',
+        moderation_status: 'pending'
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[Advertising API] ❌ DB Error creating campaign:', error)
+      return NextResponse.json(
+        { error: 'Ошибка создания кампании', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    console.log('[Advertising API] ✅ Campaign created successfully:', campaign.id)
+    return NextResponse.json({ campaign }, { status: 201 })
+  } catch (error: any) {
+    console.error('[Advertising API] ❌ Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера', details: error?.message },
+      { status: 500 }
+    )
+  }
+}
+

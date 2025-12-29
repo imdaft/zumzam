@@ -1,0 +1,230 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { NextResponse } from 'next/server'
+
+interface RouteParams {
+  params: Promise<{
+    id: string
+  }>
+}
+
+/**
+ * GET /api/bookings/[id] - Получить одно бронирование
+ */
+export async function GET(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const { data: booking, error } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        services:service_id (
+          id,
+          title,
+          description,
+          price,
+          duration_minutes,
+          photos
+        ),
+        profiles:profile_id (
+          id,
+          slug,
+          display_name,
+          city,
+          phone,
+          email,
+          avatar_url
+        ),
+        clients:client_id (
+          id,
+          email,
+          full_name
+        )
+      `)
+      .eq('id', params.id)
+      .single()
+
+    if (error) {
+      logger.error('Get booking error:', error)
+      if (error.code === 'PGRST116') {
+        return NextResponse.json(
+          { error: 'Booking not found' },
+          { status: 404 }
+        )
+      }
+      throw error
+    }
+
+    // Проверка прав доступа (только клиент или студия могут видеть)
+    if (booking.client_id !== userId && booking.profile_id !== userId) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
+      )
+    }
+
+    return NextResponse.json({ booking })
+  } catch (error: any) {
+    logger.error('Get booking error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch booking' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/bookings/[id] - Обновить статус бронирования
+ */
+export async function PATCH(request: Request, context: RouteParams) {
+  try {
+    const params = await context.params
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { status, rejection_reason } = body
+
+    // Валидация статуса
+    const validStatuses = ['pending', 'confirmed', 'cancelled', 'completed', 'rejected']
+    if (!status || !validStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: 'Invalid status' },
+        { status: 400 }
+      )
+    }
+
+    // Получаем текущее бронирование
+    const { data: currentBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('id, profile_id, client_id, status')
+      .eq('id', params.id)
+      .single()
+
+    if (fetchError || !currentBooking) {
+      return NextResponse.json(
+        { error: 'Booking not found' },
+        { status: 404 }
+      )
+    }
+
+    // Проверка прав доступа
+    // Клиент может только отменить (cancelled)
+    // Студия может подтвердить (confirmed), отклонить (rejected), завершить (completed)
+    if (status === 'cancelled' && currentBooking.client_id !== userId) {
+      return NextResponse.json(
+        { error: 'Only client can cancel booking' },
+        { status: 403 }
+      )
+    }
+
+    if (['confirmed', 'rejected', 'completed'].includes(status) && currentBooking.profile_id !== userId) {
+      return NextResponse.json(
+        { error: 'Only profile owner can update this status' },
+        { status: 403 }
+      )
+    }
+
+    // Обновление бронирования
+    const updateData: any = {
+      status,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (rejection_reason) {
+      updateData.rejection_reason = rejection_reason
+    }
+
+    const { data: booking, error: updateError } = await supabase
+      .from('bookings')
+      .update(updateData)
+      .eq('id', params.id)
+      .select(`
+        *,
+        services:service_id (
+          id,
+          title,
+          price
+        ),
+        profiles:profile_id (
+          id,
+          slug,
+          display_name
+        ),
+        clients:client_id (
+          id,
+          email,
+          full_name
+        )
+      `)
+      .single()
+
+    if (updateError) {
+      logger.error('Update booking error:', updateError)
+      throw updateError
+    }
+
+    // TODO: День 24 - Отправить уведомление о смене статуса
+
+    return NextResponse.json({
+      booking,
+      message: `Booking ${status} successfully`,
+    })
+  } catch (error: any) {
+    logger.error('Update booking error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to update booking' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/bookings/[id] - Удалить бронирование (только для админов, пока не реализовано)
+ */
+export async function DELETE(request: Request, context: RouteParams) {
+  return NextResponse.json(
+    { error: 'Delete not implemented' },
+    { status: 501 }
+  )
+}
+
+

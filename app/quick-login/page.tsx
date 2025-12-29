@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 export default function QuickLoginPage() {
@@ -17,19 +16,20 @@ export default function QuickLoginPage() {
     setError('')
 
     try {
-      const supabase = createClient()
-
       console.log('[QuickLogin] Attempting login...')
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       })
-      console.log('[QuickLogin] Login result:', data?.user ? 'SUCCESS' : 'FAILED', loginError?.message || '')
 
-      if (loginError) {
-        setError(loginError.message)
+      const result = await response.json()
+
+      if (!response.ok) {
+        setError(result.error || 'Ошибка входа')
         setStatus('Ошибка входа')
       } else {
+        console.log('[QuickLogin] Login success!')
         setStatus('Успешно! Перенаправляю на создание профиля...')
         setTimeout(() => {
           router.push('/quick-profile')

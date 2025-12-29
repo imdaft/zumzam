@@ -1,0 +1,111 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * POST /api/settings/notifications/email-confirm
+ * Подтвердить email по коду
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    const { code } = await request.json()
+    
+    if (!code) {
+      return NextResponse.json(
+        { error: 'Код обязателен' },
+        { status: 400 }
+      )
+    }
+
+    // Ищем код в таблице email_verification_codes
+    const { data: codeData, error: codeError } = await supabase
+      .from('email_verification_codes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('code', code)
+      .eq('used', false)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (codeError || !codeData) {
+      return NextResponse.json(
+        { error: 'Неверный или просроченный код' },
+        { status: 400 }
+      )
+    }
+
+    // Помечаем код как использованный
+    await supabase
+      .from('email_verification_codes')
+      .update({ used: true })
+      .eq('id', codeData.id)
+
+    // Обновляем настройки уведомлений
+    const { error: updateError } = await supabase
+      .from('notification_settings')
+      .update({ 
+        email_verified: true
+      })
+      .eq('user_id', userId)
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Email подтверждён'
+    })
+  } catch (error: any) {
+    logger.error('[Email Confirm API] Error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

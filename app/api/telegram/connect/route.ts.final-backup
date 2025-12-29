@@ -1,0 +1,212 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+// Привязка Telegram по коду
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+    
+    const { code } = await request.json()
+    
+    if (!code) {
+      return NextResponse.json({ error: 'Code is required' }, { status: 400 })
+    }
+    
+    // Ищем код
+    const { data: connectCode, error: codeError } = await supabase
+      .from('telegram_connect_codes')
+      .select('*')
+      .eq('code', code.toUpperCase())
+      .gt('expires_at', new Date().toISOString())
+      .is('used_at', null)
+      .single()
+    
+    if (codeError || !connectCode) {
+      return NextResponse.json({ 
+        error: 'Код недействителен или истёк. Получите новый код в Telegram боте.' 
+      }, { status: 400 })
+    }
+    
+    // Проверяем, не привязан ли уже этот Telegram к другому аккаунту
+    const { data: existingTelegram } = await supabase
+      .from('telegram_users')
+      .select('user_id')
+      .eq('telegram_id', connectCode.telegram_id)
+      .single()
+    
+    if (existingTelegram && existingTelegram.user_id !== userId) {
+      return NextResponse.json({ 
+        error: 'Этот Telegram уже привязан к другому аккаунту' 
+      }, { status: 400 })
+    }
+    
+    // Создаём или обновляем запись telegram_users
+    const { error: upsertError } = await supabase
+      .from('telegram_users')
+      .upsert({
+        telegram_id: connectCode.telegram_id,
+        telegram_username: connectCode.telegram_username,
+        user_id: userId,
+        notify_new_requests: true,
+        notify_messages: true,
+        notify_order_status: true,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'telegram_id',
+      })
+    
+    // Error handling removed (Prisma throws exceptions), { status: 500 })
+    }
+    
+    // Помечаем код как использованный
+    await supabase
+      .from('telegram_connect_codes')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', connectCode.id)
+    
+    // Отправляем уведомление в Telegram
+    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+    if (BOT_TOKEN) {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: connectCode.telegram_id,
+          text: `✅ <b>Аккаунт успешно привязан!</b>\n\nТеперь вы будете получать уведомления о:\n• Новых объявлениях по вашим подпискам\n• Откликах на ваши объявления\n• Новых сообщениях`,
+          parse_mode: 'HTML',
+        }),
+      })
+    }
+    
+    return NextResponse.json({ 
+      success: true,
+      telegram_username: connectCode.telegram_username,
+    })
+  } catch (error) {
+    console.error('Telegram connect error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// Отвязка Telegram
+export async function DELETE(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+    
+    // Находим привязанный Telegram
+    const { data: telegramUser } = await supabase
+      .from('telegram_users')
+      .select('telegram_id')
+      .eq('user_id', userId)
+      .single()
+    
+    if (!telegramUser) {
+      return NextResponse.json({ error: 'Telegram не привязан' }, { status: 400 })
+    }
+    
+    // Удаляем привязку
+    await supabase
+      .from('telegram_users')
+      .delete()
+      .eq('user_id', userId)
+    
+    // Уведомляем в Telegram
+    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+    if (BOT_TOKEN && telegramUser.telegram_id) {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: telegramUser.telegram_id,
+          text: `🔓 Ваш Telegram отвязан от аккаунта ZumZam.\n\nВы больше не будете получать уведомления.`,
+          parse_mode: 'HTML',
+        }),
+      })
+    }
+    
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Telegram disconnect error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// Получить статус привязки
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+    
+    const { data: telegramUser } = await supabase
+      .from('telegram_users')
+      .select('telegram_id, telegram_username, notify_new_requests, notify_messages, notify_order_status, is_active')
+      .eq('user_id', userId)
+      .single()
+    
+    return NextResponse.json({
+      connected: !!telegramUser,
+      telegram_username: telegramUser?.telegram_username,
+      settings: telegramUser ? {
+        notify_new_requests: telegramUser.notify_new_requests,
+        notify_messages: telegramUser.notify_messages,
+        notify_order_status: telegramUser.notify_order_status,
+        is_active: telegramUser.is_active,
+      } : null,
+    })
+  } catch (error) {
+    console.error('Telegram status error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+

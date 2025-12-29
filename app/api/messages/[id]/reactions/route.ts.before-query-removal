@@ -1,0 +1,144 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+// GET /api/messages/[id]/reactions — получить реакции на сообщение
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: messageId } = await params
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const { data: reactions, error } = await supabase
+      .from('message_reactions')
+      .select('*')
+      .eq('message_id', messageId)
+
+    if (error) {
+      return NextResponse.json({ error: 'Ошибка получения реакций' }, { status: 500 })
+    }
+
+    return NextResponse.json({ reactions })
+  } catch (error) {
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+// POST /api/messages/[id]/reactions — добавить/обновить реакцию
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: messageId } = await params
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { emoji } = body
+
+    if (!emoji) {
+      return NextResponse.json({ error: 'Эмодзи не указан' }, { status: 400 })
+    }
+
+    // Upsert — вставить или обновить
+    const { data, error } = await supabase
+      .from('message_reactions')
+      .upsert(
+        { message_id: messageId, user_id: userId, emoji },
+        { onConflict: 'message_id,user_id' }
+      )
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[Reactions API] Error:', error)
+      return NextResponse.json({ error: 'Ошибка добавления реакции' }, { status: 500 })
+    }
+
+    return NextResponse.json({ reaction: data })
+  } catch (error) {
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+// DELETE /api/messages/[id]/reactions — удалить реакцию
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: messageId } = await params
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const { error } = await supabase
+      .from('message_reactions')
+      .delete()
+      .eq('message_id', messageId)
+      .eq('user_id', userId)
+
+    if (error) {
+      return NextResponse.json({ error: 'Ошибка удаления реакции' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+
+
+
+
+

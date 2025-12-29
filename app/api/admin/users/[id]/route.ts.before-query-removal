@@ -1,0 +1,167 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * GET /api/admin/users/[id]
+ * Получить детальную информацию о пользователе
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    logger.info('[Admin User Detail] Starting request for user:', id)
+    
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    // Проверяем роль админа
+    const { data: userData, error: userRoleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userRoleError || userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Получаем основную информацию о пользователе
+    const { data: targetUser, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (userError || !targetUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // Получаем профили пользователя
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, display_name, slug, category, is_published, verified, rating, reviews_count')
+      .eq('user_id', id)
+
+    // Получаем статистику из материализованного представления
+    const { data: statistics } = await supabase
+      .from('user_statistics')
+      .select('*')
+      .eq('user_id', id)
+      .single()
+
+    // Получаем последние заказы
+    const { data: recentOrders } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        status,
+        total_amount,
+        event_date,
+        created_at,
+        profiles:profile_id (
+          display_name,
+          slug
+        )
+      `)
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    // Получаем источники трафика
+    const { data: sources } = await supabase
+      .from('user_sources')
+      .select('*')
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    // Получаем последнюю активность
+    const { data: recentActivity } = await supabase
+      .from('user_activity')
+      .select('*')
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    // Получаем интересы
+    const { data: interests } = await supabase
+      .from('user_interests')
+      .select('*')
+      .eq('user_id', id)
+      .order('interest_score', { ascending: false })
+
+    // Агрегируем данные по типам активности
+    const activityByType = await supabase
+      .from('user_activity')
+      .select('action_type')
+      .eq('user_id', id)
+
+    const activityStats = activityByType.data?.reduce((acc: any, item: any) => {
+      acc[item.action_type] = (acc[item.action_type] || 0) + 1
+      return acc
+    }, {})
+
+    // Получаем историю поисковых запросов
+    const { data: searchHistory } = await supabase
+      .from('user_activity')
+      .select('action_data, created_at')
+      .eq('user_id', id)
+      .eq('action_type', 'search')
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    // Получаем просмотренные профили
+    const { data: viewedProfiles } = await supabase
+      .from('user_activity')
+      .select('action_data, created_at')
+      .eq('user_id', id)
+      .eq('action_type', 'profile_view')
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    return NextResponse.json({
+      user: targetUser,
+      profiles: profiles || [],
+      statistics: statistics || {},
+      recentOrders: recentOrders || [],
+      sources: sources || [],
+      recentActivity: recentActivity || [],
+      interests: interests || [],
+      activityStats: activityStats || {},
+      searchHistory: searchHistory || [],
+      viewedProfiles: viewedProfiles || [],
+    }, { status: 200 })
+  } catch (error: any) {
+    logger.error('[Admin User Detail] Error:', error)
+    return NextResponse.json({ 
+      error: 'Failed to fetch user details', 
+      details: error.message 
+    }, { status: 500 })
+  }
+}

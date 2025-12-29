@@ -1,0 +1,366 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { spawn } from 'child_process'
+import path from 'path'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 180 // Увеличиваем таймаут до 180 секунд (3 минуты) для полного парсинга 140 отзывов
+
+interface YandexReview {
+  id: string
+  author: {
+    name: string
+    avatar?: string
+    profile_url?: string
+  }
+  rating: number
+  text: string
+  date: string
+  photos?: string[]
+}
+
+/**
+ * POST /api/yandex-reviews/parse
+ * Парсит отзывы с Яндекс.Карт и кеширует в БД
+ */
+export async function POST(request: Request) {
+  console.log('[ParseYandexReviews] ===== START =====')
+  try {
+    const body = await request.json()
+    console.log('[ParseYandexReviews] Request body:', body)
+    
+    const { location_id } = body
+
+    if (!location_id) {
+      console.error('[ParseYandexReviews] Missing location_id')
+      return NextResponse.json(
+        { error: 'location_id is required' },
+        { status: 400 }
+      )
+    }
+
+    console.log('[ParseYandexReviews] Parsing reviews for location:', location_id)
+
+    // Supabase client removed
+
+    // Получаем location с yandex_url
+    const { data: location, error: locError } = await supabase
+      .from('profile_locations')
+      .select('id, yandex_url')
+      .eq('id', location_id)
+      .single()
+
+    if (locError || !location || !location.yandex_url) {
+      return NextResponse.json(
+        { error: 'Location not found or yandex_url is missing' },
+        { status: 404 }
+      )
+    }
+
+    // Извлекаем OID из URL
+    const oid = extractOidFromUrl(location.yandex_url)
+    
+    if (!oid) {
+      return NextResponse.json(
+        { error: 'Could not extract OID from yandex_url' },
+        { status: 400 }
+      )
+    }
+
+    console.log('[ParseYandexReviews] Extracted OID:', oid)
+
+    // Проверяем кеш и ограничения
+    const { data: existingCache } = await supabase
+      .from('yandex_reviews_cache')
+      .select('*')
+      .eq('profile_location_id', location_id)
+      .single()
+
+    const now = new Date()
+    
+    // Проверка 1: Успешный парсинг был менее 3 дней назад
+    if (existingCache?.last_successful_parse_at) {
+      const lastSuccess = new Date(existingCache.last_successful_parse_at)
+      const daysSinceSuccess = (now.getTime() - lastSuccess.getTime()) / (1000 * 60 * 60 * 24)
+      
+      if (daysSinceSuccess < 3) {
+        const hoursLeft = Math.ceil((3 * 24 - daysSinceSuccess * 24) * 10) / 10
+        console.log('[ParseYandexReviews] ⏰ Too early! Last success:', lastSuccess)
+        return NextResponse.json(
+          { 
+            error: 'Парсинг заблокирован',
+            details: `После успешного парсинга можно повторить только через 3 дня. Осталось ≈${hoursLeft} часов.`,
+            next_available_at: new Date(lastSuccess.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+          },
+          { status: 429 } // Too Many Requests
+        )
+      }
+    }
+
+    // Проверка 2: Последняя попытка была менее 10 минут назад
+    if (existingCache?.last_attempt_at) {
+      const lastAttempt = new Date(existingCache.last_attempt_at)
+      const minutesSinceAttempt = (now.getTime() - lastAttempt.getTime()) / (1000 * 60)
+      
+      if (minutesSinceAttempt < 10) {
+        const minutesLeft = Math.ceil(10 - minutesSinceAttempt)
+        console.log('[ParseYandexReviews] ⏰ Too early! Last attempt:', lastAttempt)
+        return NextResponse.json(
+          { 
+            error: 'Слишком частые попытки',
+            details: `Между попытками парсинга должен быть интервал 10 минут. Осталось ${minutesLeft} мин.`,
+            next_available_at: new Date(lastAttempt.getTime() + 10 * 60 * 1000).toISOString(),
+          },
+          { status: 429 }
+        )
+      }
+    }
+
+    // Проверка 3: Сброс счётчика попыток, если новый день
+    let attemptsToday = existingCache?.attempts_today || 0
+    const resetDate = existingCache?.attempts_reset_at ? new Date(existingCache.attempts_reset_at) : null
+    const today = new Date().toISOString().split('T')[0]
+    
+    if (!resetDate || resetDate.toISOString().split('T')[0] !== today) {
+      // Новый день - сбрасываем счётчик
+      attemptsToday = 0
+    }
+
+    // Проверка 4: Максимум 5 попыток в день
+    if (attemptsToday >= 5) {
+      console.log('[ParseYandexReviews] ⛔ Daily limit reached:', attemptsToday)
+      return NextResponse.json(
+        { 
+          error: 'Превышен лимит попыток',
+          details: 'Максимум 5 попыток парсинга в день. Попробуйте завтра.',
+          attempts_today: attemptsToday,
+          next_available_at: new Date(new Date().setHours(24, 0, 0, 0)).toISOString(), // Начало следующего дня
+        },
+        { status: 429 }
+      )
+    }
+
+    // Обновляем счётчики ПЕРЕД попыткой парсинга
+    await supabase
+      .from('yandex_reviews_cache')
+      .upsert({
+        profile_location_id: location_id,
+        yandex_oid: oid,
+        reviews: existingCache?.reviews || [],
+        rating: existingCache?.rating || null,
+        review_count: existingCache?.review_count || 0,
+        parse_attempts: (existingCache?.parse_attempts || 0) + 1,
+        last_attempt_at: now.toISOString(),
+        attempts_today: attemptsToday + 1,
+        attempts_reset_at: today,
+        last_successful_parse_at: existingCache?.last_successful_parse_at || null,
+        last_parsed_at: existingCache?.last_parsed_at || null,
+      }, {
+        onConflict: 'profile_location_id'
+      })
+
+    // Парсим отзывы через отдельный Node.js скрипт
+    console.log('[ParseYandexReviews] Starting Puppeteer script...')
+    let reviews, rating, reviewCount
+    
+    try {
+      const result = await runPuppeteerScript(location.yandex_url)
+      console.log('[ParseYandexReviews] Puppeteer SUCCESS!')
+      console.log('[ParseYandexReviews] Reviews count:', result.reviews.length)
+      console.log('[ParseYandexReviews] Rating:', result.rating)
+      console.log('[ParseYandexReviews] Review count:', result.reviewCount)
+      
+      reviews = result.reviews
+      rating = result.rating
+      reviewCount = result.reviewCount
+    } catch (puppeteerError: any) {
+      console.error('[ParseYandexReviews] Puppeteer error:', puppeteerError.message)
+      
+      // Если парсер занят - возвращаем специальную ошибку
+      if (puppeteerError.message.includes('PARSER_BUSY')) {
+        return NextResponse.json(
+          { 
+            error: 'Парсер уже работает',
+            details: 'Сейчас уже идёт загрузка отзывов. Пожалуйста, подождите завершения (обычно 30-60 секунд) и попробуйте снова.',
+            attempts_today: attemptsToday + 1,
+            remaining_attempts: 5 - (attemptsToday + 1),
+          },
+          { status: 429 } // Too Many Requests
+        )
+      }
+      
+      // Для других ошибок - возвращаем ошибку БЕЗ mock-данных
+      return NextResponse.json(
+        { 
+          error: 'Ошибка парсинга',
+          details: puppeteerError.message,
+          attempts_today: attemptsToday + 1,
+          remaining_attempts: 5 - (attemptsToday + 1),
+        },
+        { status: 500 }
+      )
+    }
+    
+    console.log('[ParseYandexReviews] Parsed', reviews.length, 'reviews')
+
+    // Вычисляем средний рейтинг
+    const finalRating = rating || (reviews.length > 0
+      ? reviews.reduce((sum: number, r: any) => sum + r.rating, 0) / reviews.length
+      : null)
+
+    // Парсинг УСПЕШЕН - сохраняем и обновляем last_successful_parse_at
+    console.log('[ParseYandexReviews] Attempting to cache:', {
+      profile_location_id: location_id,
+      yandex_oid: oid,
+      reviews_count: reviews.length,
+      rating: finalRating,
+      review_count: reviewCount,
+    })
+
+    const { error: upsertError } = await supabase
+      .from('yandex_reviews_cache')
+      .upsert({
+        profile_location_id: location_id,
+        yandex_oid: oid,
+        reviews: reviews,
+        rating: finalRating ? parseFloat(finalRating.toFixed(1)) : null,
+        review_count: reviewCount,
+        parse_attempts: (existingCache?.parse_attempts || 0) + 1,
+        last_attempt_at: now.toISOString(),
+        last_successful_parse_at: now.toISOString(), // ✅ Успешный парсинг!
+        attempts_today: attemptsToday + 1,
+        attempts_reset_at: today,
+        last_parsed_at: now.toISOString(),
+      }, {
+        onConflict: 'profile_location_id'
+      })
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    console.log('[ParseYandexReviews] ✅ Successfully cached', reviews.length, 'reviews')
+
+    return NextResponse.json({ 
+      success: true, 
+      cached: false,
+      reviews_count: reviews.length,
+      rating: finalRating,
+      next_parse_available_at: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(), // Через 3 дня
+    })
+
+  } catch (error: any) {
+    console.error('[ParseYandexReviews] Error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Запускает отдельный Node.js скрипт для парсинга через Puppeteer
+ */
+function runPuppeteerScript(yandexUrl: string): Promise<{
+  reviews: any[]
+  rating: number | null
+  reviewCount: number
+}> {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(process.cwd(), 'scripts', 'parse-yandex-reviews.js')
+    console.log('[runPuppeteerScript] Launching script:', scriptPath)
+    console.log('[runPuppeteerScript] URL:', yandexUrl)
+    
+    const child = spawn('node', [scriptPath, yandexUrl], {
+      cwd: process.cwd(),
+      env: process.env,
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (data) => {
+      const output = data.toString()
+      console.log('[Puppeteer Script]', output)
+      stdout += output
+    })
+
+    child.stderr.on('data', (data) => {
+      const output = data.toString()
+      console.error('[Puppeteer Script Error]', output)
+      stderr += output
+    })
+
+    child.on('close', (code) => {
+      console.log('[runPuppeteerScript] Process exited with code:', code)
+      
+      if (code === 0) {
+        // Извлекаем JSON из stdout (между __RESULT_START__ и __RESULT_END__)
+        const startMarker = '__RESULT_START__'
+        const endMarker = '__RESULT_END__'
+        
+        const startIndex = stdout.indexOf(startMarker)
+        const endIndex = stdout.indexOf(endMarker)
+        
+        if (startIndex !== -1 && endIndex !== -1) {
+          const jsonString = stdout.substring(startIndex + startMarker.length, endIndex).trim()
+          
+          try {
+            const result = JSON.parse(jsonString)
+            resolve({
+              reviews: result.reviews,
+              rating: result.rating,
+              reviewCount: result.reviewCount
+            })
+          } catch (parseError: any) {
+            reject(new Error(`Failed to parse result JSON: ${parseError.message}`))
+          }
+        } else {
+          reject(new Error('Could not find result markers in script output'))
+        }
+      } else {
+        reject(new Error(`Puppeteer script failed with code ${code}. Error: ${stderr}`))
+      }
+    })
+
+    child.on('error', (error) => {
+      console.error('[runPuppeteerScript] Failed to start process:', error)
+      reject(error)
+    })
+  })
+}
+
+/**
+ * Извлекает OID из URL Яндекс.Карт
+ */
+function extractOidFromUrl(url: string): string | null {
+  try {
+    // Варианты URL:
+    // https://yandex.ru/maps/org/kids_point/140508158689/
+    // https://yandex.ru/maps/org/140508158689/
+    // https://yandex.ru/maps/?oid=140508158689
+    
+    const urlObj = new URL(url)
+    
+    // Ищем в query params
+    const oidParam = urlObj.searchParams.get('oid')
+    if (oidParam) return oidParam
+    
+    // Ищем в пути /org/.../OID/
+    const orgMatch = url.match(/\/org\/[^\/]*\/(\d{9,})/)
+    if (orgMatch) return orgMatch[1]
+    
+    // Ищем просто число
+    const numMatch = url.match(/\/(\d{9,})/)
+    if (numMatch) return numMatch[1]
+    
+    return null
+  } catch {
+    return null
+  }
+}

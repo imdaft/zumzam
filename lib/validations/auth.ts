@@ -3,7 +3,7 @@ import { z } from 'zod'
 /**
  * Схема валидации для формы логина
  */
-export const loginSchema = z.object({
+const loginSchema = z.object({
   email: z
     .string()
     .min(1, 'Email обязателен')
@@ -14,12 +14,13 @@ export const loginSchema = z.object({
     .min(6, 'Пароль должен содержать минимум 6 символов'),
 })
 
+export { loginSchema }
 export type LoginInput = z.infer<typeof loginSchema>
 
 /**
  * Схема валидации для формы регистрации
  */
-export const registerSchema = z.object({
+const registerSchema = z.object({
   email: z
     .string()
     .min(1, 'Email обязателен')
@@ -37,7 +38,7 @@ export const registerSchema = z.object({
     .min(1, 'Имя обязательно')
     .min(2, 'Имя должно содержать минимум 2 символа')
     .max(100, 'Имя слишком длинное'),
-  role: z.enum(['parent', 'animator', 'studio'], {
+  role: z.enum(['client', 'provider'], {
     required_error: 'Выберите тип аккаунта',
   }),
   phone: z
@@ -59,24 +60,26 @@ export const registerSchema = z.object({
   path: ['confirmPassword'],
 })
 
+export { registerSchema }
 export type RegisterInput = z.infer<typeof registerSchema>
 
 /**
  * Схема валидации для формы восстановления пароля
  */
-export const resetPasswordSchema = z.object({
+const resetPasswordSchema = z.object({
   email: z
     .string()
     .min(1, 'Email обязателен')
     .email('Некорректный email'),
 })
 
+export { resetPasswordSchema }
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>
 
 /**
  * Схема валидации для формы обновления пароля
  */
-export const updatePasswordSchema = z.object({
+const updatePasswordSchema = z.object({
   password: z
     .string()
     .min(1, 'Пароль обязателен')
@@ -90,6 +93,7 @@ export const updatePasswordSchema = z.object({
   path: ['confirmPassword'],
 })
 
+export { updatePasswordSchema }
 export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>
 
 

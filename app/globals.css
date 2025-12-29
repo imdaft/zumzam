@@ -1,121 +1,457 @@
+/* Подключаем несколько округлых шрифтов для выбора - все с кириллицей */
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Jost:wght@300;400;500;600;700;800;900&family=Commissioner:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Open+Sans:wght@300;400;500;600;700;800&family=Raleway:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Comfortaa:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&family=Exo+2:wght@300;400;500;600;700;800;900&family=Public+Sans:wght@300;400;500;600;700;800;900&family=Onest:wght@300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-
-
 @layer base {
   :root {
-
     --background: 0 0% 100%;
-
-    --foreground: 0 0% 3.9%;
+    --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
 
-    --popover-foreground: 0 0% 3.9%;
+    /* Фирменный оранжевый (#F16F2C) */
+    --primary: 20 89% 56%;
+    --primary-foreground: 0 0% 100%;
 
-    --primary: 0 0% 9%;
+    /* Фирменный голубой (#4C94D3) */
+    --brand-blue: 208 61% 56%;
 
-    --primary-foreground: 0 0% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11%;
 
-    --secondary: 0 0% 96.1%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215 16% 47%;
 
-    --secondary-foreground: 0 0% 9%;
-
-    --muted: 0 0% 96.1%;
-
-    --muted-foreground: 0 0% 45.1%;
-
-    --accent: 0 0% 96.1%;
-
-    --accent-foreground: 0 0% 9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222 47% 11%;
 
     --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
 
-    --destructive-foreground: 0 0% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 217 91% 60%;
 
-    --border: 0 0% 89.8%;
+    --radius: 0.75rem;
 
-    --input: 0 0% 89.8%;
-
-    --ring: 0 0% 3.9%;
-
-    --chart-1: 12 76% 61%;
-
-    --chart-2: 173 58% 39%;
-
-    --chart-3: 197 37% 24%;
-
-    --chart-4: 43 74% 66%;
-
-    --chart-5: 27 87% 67%;
-
-    --radius: 0.5rem
+    /* ========================================
+       📱 MOBILE-FIRST ADAPTIVE DESIGN SYSTEM
+       ======================================== */
+    
+    /* Адаптивные округления (Mobile-First) */
+    --radius-xs: 8px;      /* Маленькие элементы: теги, бейджи */
+    --radius-sm: 12px;     /* Кнопки, инпуты */
+    --radius-md: 16px;     /* Карточки на мобильных */
+    --radius-lg: 20px;     /* Секции на мобильных */
+    --radius-xl: 24px;     /* Большие карточки на мобильных */
+    --radius-2xl: 28px;    /* Модалки на мобильных */
+    --radius-full: 9999px; /* Круглые элементы */
+    
+    /* Адаптивные отступы секций */
+    --spacing-section: 16px;
+    --spacing-card: 12px;
+    --spacing-container: 16px;
+    
+    /* Высоты элементов */
+    --height-header: 56px;
+    --height-bottom-nav: 64px;
+    --height-button: 44px;
+    --height-input: 44px;
+    
+    /* Safe areas для iPhone */
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    
+    /* Соотношения сторон карточек */
+    --aspect-card-mobile: 1 / 1;      /* Квадрат на мобильных */
+    --aspect-card-tablet: 4 / 3;      /* Чуть шире на планшетах */
+    --aspect-card-desktop: 2 / 1;     /* Широкие на десктопе */
+    --aspect-card-expanded: 1 / 1;    /* При раскрытии свайпом */
+    
+    /* Тени для мобильных (легче) */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --shadow-sheet: 0 -4px 20px rgba(0, 0, 0, 0.15);
+    --shadow-modal: 0 8px 30px rgba(0, 0, 0, 0.2);
   }
+  
+  /* Tablet breakpoint (640px+) */
+  @media (min-width: 640px) {
+    :root {
+      --radius-md: 18px;
+      --radius-lg: 22px;
+      --radius-xl: 26px;
+      --radius-2xl: 30px;
+      
+      --spacing-section: 20px;
+      --spacing-card: 16px;
+      --spacing-container: 24px;
+      
+      --height-header: 60px;
+    }
+  }
+  
+  /* Desktop breakpoint (1024px+) */
+  @media (min-width: 1024px) {
+    :root {
+      --radius-md: 20px;
+      --radius-lg: 24px;
+      --radius-xl: 28px;
+      --radius-2xl: 32px;
+      
+      --spacing-section: 24px;
+      --spacing-card: 20px;
+      --spacing-container: 32px;
+      
+      --height-header: 64px;
+      --height-button: 48px;
+      --height-input: 48px;
+      
+      /* Тени для десктопа (глубже) */
+      --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+      --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+  }
+
   .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
 
-    --background: 0 0% 3.9%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
 
-    --foreground: 0 0% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
 
-    --card: 0 0% 3.9%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222 47% 11%;
 
-    --card-foreground: 0 0% 98%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
 
-    --popover: 0 0% 3.9%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
 
-    --popover-foreground: 0 0% 98%;
-
-    --primary: 0 0% 98%;
-
-    --primary-foreground: 0 0% 9%;
-
-    --secondary: 0 0% 14.9%;
-
-    --secondary-foreground: 0 0% 98%;
-
-    --muted: 0 0% 14.9%;
-
-    --muted-foreground: 0 0% 63.9%;
-
-    --accent: 0 0% 14.9%;
-
-    --accent-foreground: 0 0% 98%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
 
     --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
 
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 0 0% 14.9%;
-
-    --input: 0 0% 14.9%;
-
-    --ring: 0 0% 83.1%;
-
-    --chart-1: 220 70% 50%;
-
-    --chart-2: 160 60% 45%;
-
-    --chart-3: 30 80% 55%;
-
-    --chart-4: 280 65% 60%;
-
-    --chart-5: 340 75% 55%
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
   }
 }
-
-
 
 @layer base {
   * {
     @apply border-border;
   }
+  
+  html {
+    /* Запрещаем горизонтальный скролл */
+    overflow-x: hidden;
+    /* Отключаем резиновость в iOS Safari */
+    overscroll-behavior-y: none;
+    /* Запрещаем масштабирование при двойном тапе */
+    touch-action: manipulation;
+  }
+  
   body {
     @apply bg-background text-foreground;
+    /* Запрещаем горизонтальный скролл */
+    overflow-x: hidden;
+    /* Фиксируем ширину на 100vw */
+    max-width: 100vw;
+    /* Предотвращаем "дёрганье" при скролле в iOS Safari */
+    position: relative;
   }
 }
+
+@layer utilities {
+  /* ========================================
+     📱 ADAPTIVE RADIUS UTILITIES
+     Используй эти классы вместо фиксированных rounded-[24px]
+     ======================================== */
+  
+  /* Адаптивные округления */
+  .rounded-adaptive-xs { border-radius: var(--radius-xs); }
+  .rounded-adaptive-sm { border-radius: var(--radius-sm); }
+  .rounded-adaptive-md { border-radius: var(--radius-md); }
+  .rounded-adaptive-lg { border-radius: var(--radius-lg); }
+  .rounded-adaptive-xl { border-radius: var(--radius-xl); }
+  .rounded-adaptive-2xl { border-radius: var(--radius-2xl); }
+  
+  /* Адаптивные отступы */
+  .p-adaptive-section { padding: var(--spacing-section); }
+  .p-adaptive-card { padding: var(--spacing-card); }
+  .px-adaptive-container { padding-left: var(--spacing-container); padding-right: var(--spacing-container); }
+  .gap-adaptive-section { gap: var(--spacing-section); }
+  .gap-adaptive-card { gap: var(--spacing-card); }
+  
+  /* ========================================
+     📱 CARD ASPECT RATIOS
+     Адаптивные соотношения сторон карточек
+     ======================================== */
+  
+  /* Карточка профиля: квадрат на мобильных → 2:1 на десктопе */
+  .aspect-card {
+    aspect-ratio: var(--aspect-card-mobile);
+  }
+  @media (min-width: 640px) {
+    .aspect-card {
+      aspect-ratio: var(--aspect-card-tablet);
+    }
+  }
+  @media (min-width: 1024px) {
+    .aspect-card {
+      aspect-ratio: var(--aspect-card-desktop);
+    }
+  }
+  
+  /* Карточка в режиме свайпа/раскрытия */
+  .aspect-card-expanded {
+    aspect-ratio: var(--aspect-card-expanded);
+  }
+  
+  /* Принудительно 2:1 (для горизонтальных списков) */
+  .aspect-card-wide {
+    aspect-ratio: 2 / 1;
+  }
+  
+  /* Принудительно 1:1 (для вертикальных списков на мобильных) */
+  .aspect-card-square {
+    aspect-ratio: 1 / 1;
+  }
+  
+  /* ========================================
+     📱 MOBILE NAVIGATION & SAFE AREAS
+     ======================================== */
+  
+  /* Учёт safe area для bottom navigation */
+  .pb-safe {
+    padding-bottom: calc(var(--height-bottom-nav) + var(--safe-area-bottom));
+  }
+  
+  .pb-safe-only {
+    padding-bottom: var(--safe-area-bottom);
+  }
+  
+  .pt-safe {
+    padding-top: var(--safe-area-top);
+  }
+  
+  /* Safe area top/bottom — добавляют отступ сверху/снизу для iPhone */
+  .safe-area-top {
+    padding-top: var(--safe-area-top);
+  }
+  
+  .safe-area-bottom {
+    padding-bottom: var(--safe-area-bottom);
+  }
+  
+  /* Высота header с учётом safe area */
+  .h-header {
+    height: calc(var(--height-header) + var(--safe-area-top));
+  }
+  
+  /* Высота bottom navigation */
+  .h-bottom-nav {
+    height: calc(var(--height-bottom-nav) + var(--safe-area-bottom));
+  }
+  
+  /* Минимальная высота для контента между header и bottom nav */
+  .min-h-content {
+    min-height: calc(100dvh - var(--height-header) - var(--height-bottom-nav) - var(--safe-area-top) - var(--safe-area-bottom));
+  }
+  
+  /* ========================================
+     📱 SHADOWS (Adaptive)
+     ======================================== */
+  
+  .shadow-adaptive-card {
+    box-shadow: var(--shadow-card);
+  }
+  
+  .shadow-adaptive-card-hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+  
+  .shadow-adaptive-sheet {
+    box-shadow: var(--shadow-sheet);
+  }
+  
+  .shadow-adaptive-modal {
+    box-shadow: var(--shadow-modal);
+  }
+  
+  /* ========================================
+     📱 TOUCH & SCROLL UTILITIES
+     ======================================== */
+  
+  /* Мобильная карта - горизонтальное соотношение 3:2 */
+  .map-mobile-aspect {
+    @apply aspect-[3/2] lg:aspect-auto;
+  }
+  
+  /* Скрытие скроллбара */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Плавная резиновость карточек (как у Яндекса) */
+  .card-fluid-width {
+    width: 85vw; /* Мобилка */
+  }
+  
+  @media (min-width: 640px) {
+    .card-fluid-width {
+      /* Плавное масштабирование от 240px до 310px в зависимости от ширины экрана
+         Формула: clamp(минимум, идеальное значение с плавным изменением, максимум) */
+      width: clamp(240px, calc((100vw - 120px) / 4.2), 310px);
+      min-width: 240px;
+      max-width: 310px;
+    }
+  }
+
+  /* Супер-плавный скролл для списка карточек на карте */
+  .smooth-scroll-list {
+    scroll-behavior: smooth !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Горизонтальный scroll с snap (для карточек как у Яндекса) */
+  .scroll-snap-x {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .scroll-snap-x::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .snap-start {
+    scroll-snap-align: start;
+  }
+  
+  .snap-center {
+    scroll-snap-align: center;
+  }
+  
+  /* Touch-friendly spacing между карточками */
+  .touch-card-gap {
+    gap: 12px;
+  }
+  @media (min-width: 640px) {
+    .touch-card-gap {
+      gap: 16px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .touch-card-gap {
+      gap: 20px;
+    }
+  }
+  
+  /* ========================================
+     📱 MOBILE BOTTOM SHEET UTILITIES
+     ======================================== */
+  
+  /* Grab handle для sheet */
+  .sheet-handle {
+    @apply w-10 h-1 rounded-full bg-gray-300 mx-auto mb-3;
+  }
+  
+  /* Sheet container */
+  .sheet-content {
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    padding-bottom: var(--safe-area-bottom);
+  }
+  
+  /* ========================================
+     📱 RESPONSIVE TEXT SIZES
+     ======================================== */
+  
+  /* Заголовки секций */
+  .text-section-title {
+    @apply text-xl font-bold;
+  }
+  @media (min-width: 640px) {
+    .text-section-title {
+      @apply text-2xl;
+    }
+  }
+  
+  /* Названия карточек */
+  .text-card-title {
+    @apply text-sm font-semibold leading-tight;
+  }
+  @media (min-width: 640px) {
+    .text-card-title {
+      @apply text-[15px];
+    }
+  }
+  
+  /* ========================================
+     📱 BUTTON SIZES (Touch-friendly)
+     ======================================== */
+  
+  .btn-touch {
+    min-height: var(--height-button);
+    @apply px-4 text-sm font-medium;
+  }
+  
+  .btn-touch-lg {
+    min-height: calc(var(--height-button) + 4px);
+    @apply px-6 text-base font-semibold;
+  }
+  
+  /* ========================================
+     📱 GRID UTILITIES FOR CARDS
+     ======================================== */
+  
+  /* Сетка карточек: 2 на мобильных, 3 на планшете, 4 на десктопе */
+  .grid-cards {
+    @apply grid grid-cols-2 gap-3;
+  }
+  @media (min-width: 640px) {
+    .grid-cards {
+      @apply grid-cols-3 gap-4;
+    }
+  }
+  @media (min-width: 1024px) {
+    .grid-cards {
+      @apply grid-cols-4 gap-5;
+    }
+  }
+  
+  /* Один столбец на мобильных (для списка) */
+  .grid-cards-list {
+    @apply grid grid-cols-1 gap-3;
+  }
+  @media (min-width: 640px) {
+    .grid-cards-list {
+      @apply grid-cols-2 gap-4;
+    }
+  }
+  @media (min-width: 1024px) {
+    .grid-cards-list {
+      @apply grid-cols-3 gap-5;
+    }
+  }
+}
+

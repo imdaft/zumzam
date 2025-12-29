@@ -1,0 +1,187 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+import prisma from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
+
+// GET - получить все изображения категорий
+export async function GET() {
+  try {
+    const data = await prisma.category_images.findMany()
+    
+    if (!data) {
+      logger.error('[Category Images API] No data returned')
+      return NextResponse.json({ error: 'No data' }, { status: 500 })
+    }
+    
+    // Преобразуем в объект для удобного доступа
+    const imagesMap: Record<string, string> = {}
+    const desktopImagesMap: Record<string, string> = {}
+    const mobileImagesMap: Record<string, string> = {}
+    const originalImagesMap: Record<string, string> = {}
+    const cropsMap: Record<string, { desktop?: any, mobile?: any }> = {}
+    
+    data?.forEach((item) => {
+      // Используем category как ключ (не category_id)
+      const key = item.category
+      imagesMap[key] = item.image_url || ''
+      desktopImagesMap[key] = item.image_url || ''
+      mobileImagesMap[key] = item.image_url || ''
+      originalImagesMap[key] = item.image_url || ''
+      cropsMap[key] = {
+        desktop: null,
+        mobile: null
+      }
+    })
+    
+    logger.info('[Category Images API] Loaded images:', { count: data.length })
+    
+    return NextResponse.json({ 
+      images: imagesMap, 
+      desktopImages: desktopImagesMap,
+      mobileImages: mobileImagesMap,
+      originalImages: originalImagesMap, // New
+      crops: cropsMap 
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    })
+  } catch (error) {
+    logger.error('[Category Images API] Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// POST - добавить/обновить изображение категории
+export async function POST(request: NextRequest) {
+  try {
+    // Проверка авторизации
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    // Проверка прав администратора
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+    
+    if (!profile || profile.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    
+    const body = await request.json()
+    const { categoryId, imageUrl, originalImageUrl, desktopImageUrl, mobileImageUrl, desktopCrop, mobileCrop } = body
+    
+    if (!categoryId) {
+      return NextResponse.json({ error: 'Missing categoryId' }, { status: 400 })
+    }
+    
+    // Формируем данные для обновления
+    const updateData: any = {
+      category_id: categoryId,
+      updated_at: new Date().toISOString()
+    }
+    
+    // Legacy: если передан просто imageUrl, считаем его и desktop и mobile и original
+    if (imageUrl !== undefined) {
+      updateData.desktop_image_url = imageUrl
+      updateData.mobile_image_url = imageUrl
+      updateData.original_image_url = imageUrl
+    }
+
+    // New way: индивидуальные URL
+    if (originalImageUrl !== undefined) updateData.original_image_url = originalImageUrl
+    if (desktopImageUrl !== undefined) updateData.desktop_image_url = desktopImageUrl
+    if (mobileImageUrl !== undefined) updateData.mobile_image_url = mobileImageUrl
+    
+    // Добавляем crop-данные если переданы
+    if (desktopCrop !== undefined) {
+      updateData.desktop_crop = desktopCrop
+    }
+    
+    if (mobileCrop !== undefined) {
+      updateData.mobile_crop = mobileCrop
+    }
+    
+    // Upsert (insert or update)
+    const { data, error } = await supabase
+      .from('category_images')
+      .upsert(updateData, {
+        onConflict: 'category_id'
+      })
+      .select()
+      .single()
+    
+    if (error) {
+      logger.error('[Category Images API] Error upserting:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    
+    return NextResponse.json({ success: true, data })
+  } catch (error) {
+    logger.error('[Category Images API] Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// DELETE - удалить изображение категории
+export async function DELETE(request: NextRequest) {
+  try {
+    // Проверка авторизации
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    // Проверка прав администратора
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+    
+    if (!profile || profile.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    
+    const { searchParams } = new URL(request.url)
+    const categoryId = searchParams.get('categoryId')
+    
+    if (!categoryId) {
+      return NextResponse.json({ error: 'Missing categoryId' }, { status: 400 })
+    }
+    
+    const { error } = await supabase
+      .from('category_images')
+      .delete()
+      .eq('category_id', categoryId)
+    
+    if (error) {
+      logger.error('[Category Images API] Error deleting:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    logger.error('[Category Images API] Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+

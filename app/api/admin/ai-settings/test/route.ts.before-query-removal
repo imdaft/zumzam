@@ -1,0 +1,83 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const { providerId } = await request.json()
+
+    const { data: provider, error } = await supabase
+      .from('ai_settings')
+      .select('*')
+      .eq('id', providerId)
+      .single()
+
+    if (error || !provider) {
+      return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+    }
+
+    const startTime = Date.now()
+
+    if (provider.provider === 'ollama') {
+      const response = await fetch(`${provider.base_url}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: provider.model_name,
+          prompt: 'Say OK',
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(30000),
+      })
+
+      if (!response.ok) {
+        return NextResponse.json({
+          success: false,
+          error: `Ollama error: ${response.status}`,
+        })
+      }
+
+      const data = await response.json()
+      const latency = Date.now() - startTime
+
+      return NextResponse.json({
+        success: true,
+        latency,
+        response: data.response?.substring(0, 100),
+      })
+    } else if (provider.provider === 'google') {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai')
+      const genAI = new GoogleGenerativeAI(provider.api_key!)
+      const model = genAI.getGenerativeModel({ model: provider.model_name })
+
+      const result = await model.generateContent('Say OK')
+      const response = result.response.text()
+      const latency = Date.now() - startTime
+
+      return NextResponse.json({
+        success: true,
+        latency,
+        response: response.substring(0, 100),
+      })
+    }
+
+    return NextResponse.json({
+      success: false,
+      error: 'Unsupported provider',
+    })
+  } catch (error) {
+    logger.error('[AI Test] Error:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}

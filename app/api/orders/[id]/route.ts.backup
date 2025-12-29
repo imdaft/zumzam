@@ -1,0 +1,339 @@
+/**
+ * API для управления отдельным заказом
+ * GET /api/orders/[id] - получить заказ по ID
+ * PATCH /api/orders/[id] - обновить статус заказа (только поставщик)
+ */
+
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+import type { OrderStatus } from '@/types'
+
+interface RouteParams {
+  params: Promise<{ id: string }>
+}
+
+/**
+ * GET /api/orders/[id] - Получить заказ по ID
+ */
+export async function GET(request: Request, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+    
+    // Проверка авторизации
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Получаем заказ с проверкой прав доступа
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        items:order_items (*),
+        profile:profiles (
+          id,
+          display_name,
+          slug,
+          city,
+          phone,
+          email,
+          logo,
+          main_photo,
+          custom_fields_config
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (error) {
+      console.error('[Order API] Ошибка получения заказа:', error)
+      if (error.code === 'PGRST116') {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      throw error
+    }
+
+    // Проверяем права доступа (клиент или поставщик)
+    if (order.client_id !== user.id && order.provider_id !== user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    return NextResponse.json({ order })
+  } catch (error: any) {
+    console.error('[Order API] GET error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch order' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/orders/[id] - Обновить заказ
+ */
+export async function PATCH(request: Request, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+    
+    // Проверка авторизации
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { 
+      status, 
+      provider_response,
+      provider_internal_notes,
+      pipeline_stage_id,
+      event_date,
+      event_time,
+      event_address,
+      child_age,
+      children_count,
+      client_name,
+      client_phone,
+      client_email,
+      items,
+      discount,
+      discount_type,
+      total_amount,
+      custom_fields,
+      title
+    } = body
+
+    // Получаем текущий заказ
+    const { data: currentOrder, error: fetchError } = await supabase
+      .from('orders')
+      .select('id, client_id, provider_id, status')
+      .eq('id', id)
+      .single()
+
+    if (fetchError || !currentOrder) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Определяем роль пользователя
+    const isProvider = currentOrder.provider_id === user.id
+    const isClient = currentOrder.client_id === user.id
+
+    if (!isProvider && !isClient) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Формируем данные для обновления
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    }
+
+    // Отслеживаем изменение статуса для уведомлений
+    const oldStatus = currentOrder.status
+    let statusChanged = false
+
+    // Логика для поставщика
+    if (isProvider) {
+      if (status) {
+        updateData.status = status
+        statusChanged = status !== oldStatus
+        if (status === 'confirmed') updateData.confirmed_at = new Date().toISOString()
+        else if (status === 'completed') updateData.completed_at = new Date().toISOString()
+        else if (status === 'cancelled' || status === 'rejected') updateData.cancelled_at = new Date().toISOString()
+      }
+      
+      if (provider_response !== undefined) {
+        updateData.provider_response = provider_response
+        updateData.provider_response_at = new Date().toISOString()
+      }
+      
+      if (provider_internal_notes !== undefined) updateData.provider_internal_notes = provider_internal_notes
+      
+      // Обновление pipeline_stage_id и автоматическая синхронизация status
+      if (pipeline_stage_id !== undefined) {
+        updateData.pipeline_stage_id = pipeline_stage_id
+        
+        // Получаем system_status этапа и синхронизируем order.status
+        const { data: stage } = await supabase
+          .from('pipeline_stages')
+          .select('system_status')
+          .eq('id', pipeline_stage_id)
+          .single()
+        
+        if (stage?.system_status) {
+          updateData.status = stage.system_status
+          statusChanged = stage.system_status !== oldStatus
+          // Обновляем timestamp в зависимости от статуса
+          if (stage.system_status === 'confirmed') updateData.confirmed_at = new Date().toISOString()
+          else if (stage.system_status === 'completed') updateData.completed_at = new Date().toISOString()
+          else if (stage.system_status === 'cancelled' || stage.system_status === 'rejected') updateData.cancelled_at = new Date().toISOString()
+        }
+      }
+      
+      // Редактирование деталей заявки
+      if (event_date !== undefined) updateData.event_date = event_date
+      if (event_time !== undefined) updateData.event_time = event_time
+      if (event_address !== undefined) updateData.event_address = event_address
+      if (child_age !== undefined) updateData.child_age = child_age
+      if (children_count !== undefined) updateData.children_count = children_count
+      
+      // Редактирование данных клиента
+      if (client_name !== undefined) updateData.client_name = client_name
+      if (client_phone !== undefined) updateData.client_phone = client_phone
+      if (client_email !== undefined) updateData.client_email = client_email
+
+      // Финансовые поля
+      if (discount !== undefined) updateData.discount = discount
+      if (discount_type !== undefined) updateData.discount_type = discount_type
+      if (total_amount !== undefined) updateData.total_amount = total_amount
+      
+      // Название заявки
+      if (title !== undefined) updateData.title = title
+      
+      // Кастомные поля
+      if (custom_fields !== undefined) updateData.custom_fields = custom_fields
+
+      // Обновление состава заказа (items)
+      if (items && Array.isArray(items)) {
+        const requestId = Math.random().toString(36).substring(7)
+        console.log(`[Order API ${requestId}] Updating items for order:`, id, 'count:', items.length)
+        
+        // 1. ВСЕГДА удаляем старые (даже если items пустой)
+        const { error: deleteError } = await supabase.from('order_items').delete().eq('order_id', id)
+        if (deleteError) {
+          console.error(`[Order API ${requestId}] Delete items error:`, deleteError)
+          return NextResponse.json({ error: 'Failed to delete old items' }, { status: 500 })
+        }
+        console.log(`[Order API ${requestId}] Deleted old items`)
+        
+        // 2. Добавляем новые (только если есть)
+        if (items.length > 0) {
+          const newItems = items.map((item: any) => {
+            const price = Number(item.price) || 0
+            const quantity = Number(item.quantity) || 1
+            return {
+              order_id: id,
+              service_id: item.service_id || null,
+              service_title: item.service_title,
+              price,
+              quantity,
+              subtotal: price * quantity,
+              service_description: item.service_description
+            }
+          })
+          
+          const { error: itemsError } = await supabase.from('order_items').insert(newItems)
+          if (itemsError) {
+            console.error(`[Order API ${requestId}] Insert items error:`, itemsError)
+            return NextResponse.json({ error: 'Failed to insert items' }, { status: 500 })
+          }
+          
+          console.log(`[Order API ${requestId}] Inserted ${newItems.length} items successfully`)
+        }
+      }
+
+    } 
+    // Логика для клиента (только если НЕ провайдер)
+    else if (isClient && status) {
+      if (status === 'cancelled' && currentOrder.status === 'pending') {
+        updateData.status = 'cancelled'
+        updateData.cancelled_at = new Date().toISOString()
+      } else {
+        return NextResponse.json(
+          { error: 'Clients can only cancel pending orders' },
+          { status: 403 }
+        )
+      }
+    }
+
+    // Обновляем заказ
+    const { data: updatedOrder, error: updateError } = await supabase
+      .from('orders')
+      .update(updateData)
+      .eq('id', id)
+      .select(`
+        *,
+        items:order_items (*),
+        profile:profiles (
+          id,
+          display_name,
+          slug,
+          city,
+          phone,
+          email,
+          logo,
+          main_photo,
+          custom_fields_config
+        ),
+        pipeline_stage:pipeline_stages (
+          id,
+          name,
+          color,
+          system_status
+        )
+      `)
+      .single()
+
+    if (updateError) {
+      console.error('[Order API] Ошибка обновления заказа:', updateError)
+      throw updateError
+    }
+
+    // Создаём уведомление для клиента об изменении статуса (только если статус изменился)
+    if (isProvider && statusChanged && updatedOrder.status) {
+      const statusMessages: Record<string, { title: string; body: string }> = {
+        confirmed: {
+          title: 'Заказ подтверждён! 🎉',
+          body: `Ваш заказ №${updatedOrder.order_number || updatedOrder.id.slice(0, 8)} подтверждён и принят в работу.`,
+        },
+        in_progress: {
+          title: 'Заказ в работе',
+          body: `Работа над заказом №${updatedOrder.order_number || updatedOrder.id.slice(0, 8)} началась.`,
+        },
+        completed: {
+          title: 'Заказ выполнен ✅',
+          body: `Заказ №${updatedOrder.order_number || updatedOrder.id.slice(0, 8)} успешно выполнен. Спасибо за заказ!`,
+        },
+        cancelled: {
+          title: 'Заказ отменён',
+          body: `Заказ №${updatedOrder.order_number || updatedOrder.id.slice(0, 8)} был отменён.`,
+        },
+        rejected: {
+          title: 'Заказ отклонён',
+          body: `К сожалению, заказ №${updatedOrder.order_number || updatedOrder.id.slice(0, 8)} был отклонён.`,
+        },
+      }
+
+      const message = statusMessages[updatedOrder.status]
+      if (message) {
+        await supabase.from('notifications').insert({
+          user_id: currentOrder.client_id,
+          type: `order_${updatedOrder.status}`,
+          title: message.title,
+          body: message.body,
+          action_url: `/orders?id=${id}`,
+          read: false,
+          read_at: null,
+          data: {
+            order_id: id,
+            order_number: updatedOrder.order_number,
+            status: updatedOrder.status,
+          },
+        })
+      }
+    }
+
+    return NextResponse.json({
+      order: updatedOrder,
+      message: 'Order updated successfully',
+    })
+  } catch (error: any) {
+    console.error('[Order API] PATCH error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to update order' },
+      { status: 500 }
+    )
+  }
+}

@@ -1,0 +1,321 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+// import { generateEmbedding } from '@/lib/ai/embeddings' // ВРЕМЕННО ОТКЛЮЧЕНО
+import { NextResponse } from 'next/server'
+import type { Database } from '@/types/supabase'
+
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+type Profile = Database['public']['Tables']['profiles']['Update']
+
+/**
+ * GET /api/profiles/me - Получить основной профиль текущего пользователя
+ * @deprecated Используйте /api/profiles (список) или /api/profiles/[id]
+ * Сейчас возвращает первый найденный профиль пользователя.
+ */
+export async function GET() {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    const { data: profile, error: dbError } = await supabase
+      .from('profiles')
+      .select(`
+        *,
+        profile_locations (
+          id,
+          city,
+          address,
+          geo_location,
+          name,
+          phone,
+          email,
+          working_hours,
+          active,
+          is_main,
+          created_at,
+          updated_at,
+          details,
+          yandex_url,
+          yandex_rating,
+          yandex_review_count,
+          photos,
+          video_url
+        )
+      `)
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle()
+
+    if (dbError) throw dbError
+
+    // Если профиля нет, возвращаем null (как раньше при 406)
+    return NextResponse.json({ profile: profile || null }, { status: 200 })
+  } catch (error: any) {
+    console.error('Get profile error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch profile' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/profiles/me - Обновить основной профиль текущего пользователя
+ */
+export async function PATCH(request: Request) {
+  console.log('[PATCH /api/profiles/me] ========== REQUEST START ==========')
+  
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    // Проверяем что профиль существует и загружаем его данные
+    const { data: existingProfile, error: checkError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle()
+
+    if (checkError) {
+      console.error('[PATCH /api/profiles/me] Error checking existing profile:', checkError)
+      throw checkError
+    }
+
+    if (!existingProfile) {
+      return NextResponse.json(
+        { error: 'Profile not found. Use POST to create.' },
+        { status: 404 }
+      )
+    }
+
+    const body = await request.json()
+    
+    const {
+      display_name,
+      slug,
+      bio,
+      description,
+      city,
+      address,
+      tags,
+      price_range,
+      email,
+      phone,
+      website,
+      social_links,
+      portfolio_url,
+      cover_photo,
+      photos,
+      videos,
+      locations, // Массив локаций
+      main_photo,
+      is_published,
+      category,
+      details
+    } = body
+
+    // Если slug изменился, проверяем уникальность
+    if (slug && slug !== existingProfile.slug) {
+      const { data: existingSlug } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('slug', slug)
+        .single()
+
+      if (existingSlug) {
+        return NextResponse.json(
+          { error: 'Slug already taken' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Подготавливаем данные для обновления
+    const updateData: Profile = {}
+
+    if (display_name !== undefined) updateData.display_name = display_name
+    if (slug !== undefined) updateData.slug = slug
+    if (bio !== undefined) updateData.bio = bio
+    if (description !== undefined) updateData.description = description
+    if (city !== undefined) updateData.city = city
+    if (address !== undefined) updateData.address = address
+    if (tags !== undefined) updateData.tags = tags
+    if (price_range !== undefined) updateData.price_range = price_range
+    if (email !== undefined) updateData.email = email
+    if (phone !== undefined) updateData.phone = phone
+    if (website !== undefined) updateData.website = website
+    if (social_links !== undefined) updateData.social_links = social_links
+    if (portfolio_url !== undefined) updateData.portfolio_url = portfolio_url
+    if (cover_photo !== undefined) updateData.cover_photo = cover_photo
+    if (photos !== undefined) updateData.photos = photos
+    if (videos !== undefined) updateData.videos = videos
+    if (main_photo !== undefined) updateData.main_photo = main_photo
+    if (is_published !== undefined) updateData.is_published = is_published
+    if (category !== undefined) updateData.category = category
+    if (details !== undefined) updateData.details = details
+
+    // Обновляем профиль
+    let updatedProfile = null
+    
+    if (Object.keys(updateData).length > 0) {
+      const { data: profileData, error: updateError } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', existingProfile.id) // Обновляем конкретный ID
+        .select()
+        .single()
+
+      if (updateError) throw updateError
+      updatedProfile = profileData
+    } else {
+      updatedProfile = existingProfile
+    }
+
+    // Обновляем локации
+    if (locations !== undefined && Array.isArray(locations)) {
+      console.log('[PATCH /api/profiles/me] 📍 Received locations:', locations.map((loc: any, i: number) => ({
+        index: i,
+        id: loc.id,
+        photos: loc.photos,
+        video_url: loc.video_url
+      })))
+      
+      // Удаляем старые локации этого профиля
+      await supabase
+        .from('profile_locations')
+        .delete()
+        .eq('profile_id', existingProfile.id)
+
+      // Создаём новые
+      if (locations.length > 0) {
+        const locationsData = locations.map((loc: any, index: number) => {
+          let geoLocation: string | null = null
+          if (loc.geo_location && Array.isArray(loc.geo_location) && loc.geo_location.length === 2) {
+            const [lat, lon] = loc.geo_location
+            geoLocation = `POINT(${lon} ${lat})`
+          }
+
+          return {
+            profile_id: existingProfile.id,
+            city: loc.city || city || existingProfile.city,
+            address: loc.address || null,
+            name: loc.name || null,
+            phone: loc.phone || null,
+            email: loc.email || null,
+            working_hours: loc.working_hours || null,
+            is_main: loc.is_main !== undefined ? loc.is_main : (index === 0),
+            active: loc.active !== undefined ? loc.active : true,
+            details: loc.details || {},
+            yandex_url: loc.yandex_url || null,
+            yandex_rating: loc.yandex_rating || null,
+            yandex_review_count: loc.yandex_review_count || 0,
+            photos: loc.photos || [],
+            video_url: loc.video_url || null,
+          }
+        })
+
+        console.log('[PATCH /api/profiles/me] 💾 Inserting locations:', locationsData.map((loc: any, i: number) => ({
+          index: i,
+          photos: loc.photos,
+          video_url: loc.video_url
+        })))
+
+        const { data: insertedLocations, error: insertError } = await supabase
+          .from('profile_locations')
+          .insert(locationsData)
+          .select('id')
+
+        if (!insertError && insertedLocations) {
+          // Обновляем гео
+          const geoUpdates = locations.map((loc: any, index: number) => {
+             let geoLocation: string | null = null
+             if (loc.geo_location && Array.isArray(loc.geo_location) && loc.geo_location.length === 2) {
+                const [lat, lon] = loc.geo_location
+                geoLocation = `POINT(${lon} ${lat})`
+             }
+             return { index, geoLocation }
+          }).filter((u: any) => u.geoLocation !== null)
+
+          await Promise.all(geoUpdates.map(async (update: any) => {
+             if (update.index < insertedLocations.length) {
+                await supabase.rpc('update_location_geo', {
+                  location_id: insertedLocations[update.index].id,
+                  geo_wkt: update.geoLocation
+                })
+             }
+          }))
+        }
+      }
+    }
+
+    // Загружаем итоговый профиль с локациями
+    const { data: finalProfile } = await supabase
+      .from('profiles')
+      .select(`
+        *,
+        profile_locations (
+          id,
+          city,
+          address,
+          geo_location,
+          name,
+          phone,
+          email,
+          working_hours,
+          active,
+          is_main,
+          created_at,
+          updated_at,
+          details,
+          yandex_url,
+          yandex_rating,
+          yandex_review_count
+        )
+      `)
+      .eq('id', existingProfile.id)
+      .single()
+
+    return NextResponse.json(
+      { profile: finalProfile, message: 'Profile updated successfully' },
+      { status: 200 }
+    )
+  } catch (error: any) {
+    console.error('[PATCH /api/profiles/me] Error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to update profile' },
+      { status: 500 }
+    )
+  }
+}

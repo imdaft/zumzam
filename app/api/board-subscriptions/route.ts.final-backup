@@ -1,0 +1,136 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { BoardSubscriptionInput } from '@/lib/types/board-subscription'
+
+/**
+ * GET /api/board-subscriptions
+ * Получение списка подписок текущего пользователя
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Получаем подписки пользователя
+    const { data: subscriptions, error } = await supabase
+      .from('board_subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      logger.error('[Board Subscriptions] Error fetching subscriptions', { error })
+      return NextResponse.json({ error: 'Failed to fetch subscriptions' }, { status: 500 })
+    }
+
+    return NextResponse.json({ subscriptions })
+  } catch (error) {
+    logger.error('[Board Subscriptions] Unexpected error', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * POST /api/board-subscriptions
+ * Создание новой подписки
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const body: BoardSubscriptionInput = await request.json()
+
+    // Валидация
+    if (!body.filters || Object.keys(body.filters).length === 0) {
+      return NextResponse.json(
+        { error: 'Необходимо указать хотя бы один фильтр' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем лимит подписок (макс 10 на пользователя)
+    const { count } = await supabase
+      .from('board_subscriptions')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+
+    if (count && count >= 10) {
+      return NextResponse.json(
+        { error: 'Достигнут лимит подписок (максимум 10)' },
+        { status: 400 }
+      )
+    }
+
+    // Создаём подписку
+    const { data: subscription, error } = await supabase
+      .from('board_subscriptions')
+      .insert({
+        user_id: userId,
+        name: body.name || null,
+        filters: body.filters,
+        notify_internal: body.notify_internal ?? true,
+        notify_email: body.notify_email ?? false,
+        notify_telegram: body.notify_telegram ?? false,
+        notify_push: body.notify_push ?? false,
+        email_frequency: body.email_frequency || 'instant',
+        is_active: body.is_active ?? true,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[Board Subscriptions] Error creating subscription', { error })
+      return NextResponse.json({ error: 'Failed to create subscription' }, { status: 500 })
+    }
+
+    logger.info('[Board Subscriptions] Subscription created', { 
+      subscriptionId: subscription.id,
+      userId: userId 
+    })
+
+    return NextResponse.json({ subscription }, { status: 201 })
+  } catch (error) {
+    logger.error('[Board Subscriptions] Unexpected error', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+
+
+
+
+

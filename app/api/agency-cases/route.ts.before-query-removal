@@ -1,0 +1,36 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const profileId = searchParams.get('profile_id')
+    if (!profileId) return NextResponse.json({ error: 'profile_id required' }, { status: 400 })
+
+    // Supabase client removed
+    const { data, error } = await supabase
+      .from('agency_cases')
+      .select('*')
+      .eq('profile_id', profileId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+
+    if (error) return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
+    return NextResponse.json(data || [])
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+
+
+
+

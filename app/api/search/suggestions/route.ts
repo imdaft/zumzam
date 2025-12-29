@@ -1,153 +1,96 @@
-import { generateJSON } from '@/lib/ai/gemini'
-import { createServerClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
 
-/**
- * POST /api/search/suggestions - Генерация AI-подсказок для поиска
- * 
- * Использует Gemini для генерации умных подсказок на основе:
- * - Частичного ввода пользователя
- * - Популярных запросов
- * - Доступных услуг в базе
- */
-export async function POST(request: Request) {
+// GET /api/search/suggestions - подсказки для поиска
+export async function GET(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { query, limit = 5 } = body
+    const searchParams = request.nextUrl.searchParams
+    const query = searchParams.get('q')
+    const limit = parseInt(searchParams.get('limit') || '10')
 
-    if (!query || query.trim().length < 2) {
+    if (!query || query.length < 2) {
       return NextResponse.json({ suggestions: [] })
     }
 
-    const supabase = await createServerClient()
-
-    // 1. Получаем категории и популярные теги из базы
-    const { data: categories } = await supabase
-      .from('service_categories')
-      .select('name')
-      .limit(10)
-
-    const { data: popularServices } = await supabase
-      .from('services')
-      .select('title, tags')
-      .eq('active', true)
-      .order('created_at', { ascending: false })
-      .limit(20)
-
-    // Извлекаем уникальные теги
-    const allTags = popularServices
-      ?.flatMap(s => s.tags || [])
-      .filter((tag, index, self) => self.indexOf(tag) === index) || []
-
-    // 2. Генерируем подсказки с помощью Gemini
-    const prompt = `Ты - помощник для поиска детских праздников и развлечений.
-
-Пользователь начал вводить запрос: "${query}"
-
-Доступные категории услуг: ${categories?.map(c => c.name).join(', ')}
-Популярные теги: ${allTags.slice(0, 20).join(', ')}
-
-Сгенерируй ${limit} КРАТКИХ и РЕЛЕВАНТНЫХ подсказок для автодополнения поиска.
-Подсказки должны:
-- Быть конкретными и полезными
-- Учитывать контекст детских праздников
-- Включать возраст, если уместно
-- Быть разными по формулировке
-- Помогать найти услуги
-
-Примеры хороших подсказок:
-- "аниматор человек-паук для мальчика 5 лет"
-- "химическое шоу на день рождения"
-- "квест для подростков 12-14 лет"
-
-Верни JSON массив строк.`
-
-    const result = await generateJSON(prompt, {
-      type: 'object',
-      properties: {
-        suggestions: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Массив подсказок для автодополнения',
-        },
+    // Поиск по профилям
+    const profiles = await prisma.profiles.findMany({
+      where: {
+        is_published: true,
+        OR: [
+          { display_name: { contains: query, mode: 'insensitive' } },
+          { city: { contains: query, mode: 'insensitive' } },
+          { description: { contains: query, mode: 'insensitive' } }
+        ]
       },
-      required: ['suggestions'],
+      select: {
+        id: true,
+        slug: true,
+        display_name: true,
+        category: true,
+        city: true,
+        logo: true
+      },
+      take: limit
     })
 
-    return NextResponse.json({
-      suggestions: result.suggestions.slice(0, limit),
+    // Поиск популярных запросов
+    const popularSearches = await prisma.search_queries.groupBy({
+      by: ['query'],
+      where: {
+        query: {
+          contains: query,
+          mode: 'insensitive'
+        }
+      },
+      _count: true,
+      orderBy: {
+        _count: {
+          query: 'desc'
+        }
+      },
+      take: 5
     })
+
+    const suggestions = {
+      profiles: profiles.map(p => ({
+        type: 'profile',
+        id: p.id,
+        slug: p.slug,
+        title: p.display_name,
+        subtitle: `${getCategoryName(p.category)} • ${p.city}`,
+        logo: p.logo
+      })),
+      popular_queries: popularSearches.map(s => ({
+        type: 'query',
+        text: s.query,
+        count: s._count
+      }))
+    }
+
+    return NextResponse.json({ suggestions })
   } catch (error: any) {
-    console.error('Suggestions generation error:', error)
-    
-    // Fallback на базовые подсказки
-    const fallbackSuggestions = [
-      'аниматор на день рождения',
-      'детский праздник',
-      'химическое шоу',
-      'квест для детей',
-      'организация праздника',
-    ]
-    
-    return NextResponse.json({
-      suggestions: fallbackSuggestions,
-    })
-  }
-}
-
-/**
- * GET /api/search/suggestions - Получить популярные запросы
- */
-export async function GET() {
-  try {
-    const supabase = await createServerClient()
-
-    // В будущем можно добавить таблицу search_queries для трекинга
-    // Пока возвращаем базовые популярные запросы
-    const trendingSearches = [
-      'аниматор на день рождения',
-      'химическое шоу',
-      'организация детского праздника',
-      'квест для детей',
-      'детская фотосессия',
-      'шоу мыльных пузырей',
-      'аквагрим',
-      'праздник для малышей',
-    ]
-
-    // Получаем самые популярные теги из услуг
-    const { data: services } = await supabase
-      .from('services')
-      .select('tags, title')
-      .eq('active', true)
-      .order('created_at', { ascending: false })
-      .limit(50)
-
-    // Подсчитываем частоту тегов
-    const tagFrequency: Record<string, number> = {}
-    services?.forEach(service => {
-      service.tags?.forEach((tag: string) => {
-        tagFrequency[tag] = (tagFrequency[tag] || 0) + 1
-      })
-    })
-
-    // Топ-5 тегов
-    const topTags = Object.entries(tagFrequency)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([tag]) => tag)
-
-    return NextResponse.json({
-      trending: trendingSearches,
-      popularTags: topTags,
-    })
-  } catch (error: any) {
-    console.error('Trending searches error:', error)
+    console.error('Error fetching suggestions:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch trending searches' },
+      { error: 'Failed to fetch suggestions', details: error.message },
       { status: 500 }
     )
   }
 }
+
+function getCategoryName(category: string): string {
+  const names: Record<string, string> = {
+    animator: 'Аниматор',
+    show: 'Шоу',
+    quest: 'Квест',
+    masterclass: 'Мастер-класс',
+    host: 'Ведущий',
+    photo_video: 'Фото/видео',
+    santa: 'Дед Мороз',
+    face_painting: 'Аквагрим',
+    venue: 'Площадка'
+  }
+  return names[category] || category
+}
+
 
 

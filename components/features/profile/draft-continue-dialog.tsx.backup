@@ -1,0 +1,153 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Trash2, ArrowRight, Plus } from 'lucide-react'
+import { useProfileDrafts, type ProfileDraft } from '@/hooks/use-profile-drafts'
+import { getCategoryMetadata } from '@/lib/constants/profile-categories'
+import { format } from 'date-fns'
+import { ru } from 'date-fns/locale'
+
+interface DraftContinueDialogProps {
+  onContinue: (draft: ProfileDraft) => void
+  onStartNew: () => void
+}
+
+export function DraftContinueDialog({ onContinue, onStartNew }: DraftContinueDialogProps) {
+  const { getLatestDraft, deleteDraft, hasDrafts } = useProfileDrafts()
+  const [open, setOpen] = useState(false)
+  const [latestDraft, setLatestDraft] = useState<ProfileDraft | null>(null)
+
+  useEffect(() => {
+    // Проверяем наличие черновиков при монтировании компонента
+    if (hasDrafts()) {
+      const draft = getLatestDraft()
+      if (draft) {
+        setLatestDraft(draft)
+        setOpen(true)
+      }
+    }
+  }, [hasDrafts, getLatestDraft])
+
+  const handleContinue = () => {
+    if (latestDraft) {
+      onContinue(latestDraft)
+      setOpen(false)
+    }
+  }
+
+  const handleStartNew = () => {
+    // При начале нового профиля удаляем текущий черновик
+    if (latestDraft) {
+      deleteDraft(latestDraft.id)
+    }
+    setOpen(false)
+    onStartNew()
+  }
+
+  const handleDelete = () => {
+    if (latestDraft) {
+      deleteDraft(latestDraft.id)
+      setLatestDraft(null)
+      setOpen(false)
+      onStartNew()
+    }
+  }
+
+  if (!latestDraft) return null
+
+  const categoryMetadata = getCategoryMetadata(latestDraft.category)
+  const progress = latestDraft.progress || 0
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle className="text-xl">Продолжить создание профиля?</DialogTitle>
+          <DialogDescription className="text-base mt-2">
+            У вас есть незавершённый профиль
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-4">
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+            {/* Категория */}
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{categoryMetadata.icon}</span>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{categoryMetadata.nameRu}</p>
+                <p className="text-xs text-gray-500">
+                  {latestDraft.display_name || 'Без названия'}
+                </p>
+              </div>
+            </div>
+
+            {/* Прогресс */}
+            <div>
+              <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
+                <span>Прогресс заполнения</span>
+                <span className="font-medium">{progress}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-orange-500 h-2 rounded-full transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Дата обновления */}
+            <p className="text-xs text-gray-500">
+              Обновлено:{' '}
+              {format(new Date(latestDraft.updatedAt), 'dd MMMM, HH:mm', { locale: ru })}
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2">
+          {/* Удалить черновик */}
+          <Button
+            variant="ghost"
+            onClick={handleDelete}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Удалить
+          </Button>
+
+          <div className="flex gap-2 flex-1 sm:justify-end">
+            {/* Начать новый */}
+            <Button
+              variant="outline"
+              onClick={handleStartNew}
+              className="flex-1 sm:flex-initial"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Начать новый
+            </Button>
+
+            {/* Продолжить */}
+            <Button
+              onClick={handleContinue}
+              className="flex-1 sm:flex-initial bg-orange-500 hover:bg-orange-600"
+            >
+              Продолжить
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+
+

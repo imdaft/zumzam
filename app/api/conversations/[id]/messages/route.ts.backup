@@ -1,0 +1,148 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+interface RouteParams {
+  params: Promise<{ id: string }>
+}
+
+// GET /api/conversations/[id]/messages — получить сообщения диалога
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: conversationId } = await params
+    const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Необходимо авторизоваться' }, { status: 401 })
+    }
+
+    // ОПТИМИЗИРОВАНО: Отметка прочитанными неблокирующая
+    const { searchParams } = new URL(request.url)
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const before = searchParams.get('before')
+
+    // Проверяем доступ к диалогу
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select('id, participant_1_id, participant_2_id')
+      .eq('id', conversationId)
+      .single()
+
+    if (convError || !conversation) {
+      return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 })
+    }
+
+    if (conversation.participant_1_id !== user.id && conversation.participant_2_id !== user.id) {
+      return NextResponse.json({ error: 'Нет доступа к диалогу' }, { status: 403 })
+    }
+
+    // Получаем сообщения
+    let query = supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (before) {
+      query = query.lt('created_at', before)
+    }
+
+    const { data: messages, error } = await query
+
+    if (error) {
+      console.error('[API Messages] Error:', error)
+      return NextResponse.json({ error: 'Ошибка получения сообщений' }, { status: 500 })
+    }
+
+    // Отмечаем сообщения как прочитанные (неблокирующе - не ждём результат)
+    supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', user.id)
+      .is('read_at', null)
+      .then(() => {}) // Игнорируем результат
+      .catch(err => console.error('[API Messages] Error marking as read:', err))
+
+    return NextResponse.json({ 
+      messages: (messages || []).reverse(), // возвращаем в хронологическом порядке
+      hasMore: messages?.length === limit 
+    })
+  } catch (error) {
+    console.error('[API Messages] Error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+// POST /api/conversations/[id]/messages — отправить сообщение
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: conversationId } = await params
+    const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Необходимо авторизоваться' }, { status: 401 })
+    }
+
+    // Проверяем доступ к диалогу
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select('id, participant_1_id, participant_2_id, source_type, source_id')
+      .eq('id', conversationId)
+      .single()
+
+    if (convError || !conversation) {
+      return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 })
+    }
+
+    if (conversation.participant_1_id !== user.id && conversation.participant_2_id !== user.id) {
+      return NextResponse.json({ error: 'Нет доступа к диалогу' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { content, attachments } = body
+
+    if (!content?.trim()) {
+      return NextResponse.json({ error: 'Сообщение не может быть пустым' }, { status: 400 })
+    }
+
+    // Создаём сообщение
+    const { data: message, error: msgError } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: content.trim(),
+        attachments: attachments || [],
+      })
+      .select()
+      .single()
+
+    if (msgError) {
+      console.error('[API Messages] Error creating:', msgError)
+      return NextResponse.json({ error: 'Ошибка отправки сообщения' }, { status: 500 })
+    }
+
+    // ОПТИМИЗИРОВАНО: Обновляем conversations неблокирующе (не ждём результат)
+    supabase
+      .from('conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        last_message_preview: content.substring(0, 100),
+      })
+      .eq('id', conversationId)
+      .then(() => {}) // Игнорируем результат
+      .catch(err => console.error('[API Messages] Error updating conversation:', err))
+
+    // НЕ создаём уведомление new_message — используем счётчик непрочитанных
+    // Realtime подписка обновит badge в шапке автоматически
+
+    return NextResponse.json(message, { status: 201 })
+  } catch (error) {
+    console.error('[API Messages] Error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+

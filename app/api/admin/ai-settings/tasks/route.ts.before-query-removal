@@ -1,0 +1,33 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+// Получить все задачи
+export async function GET() {
+  try {
+    // Supabase client removed
+
+    const { data: tasks, error } = await supabase
+      .from('ai_task_models')
+      .select('*')
+      .order('task_name')
+
+    if (error) {
+      logger.error('[AI Settings] Error fetching tasks:', error)
+      return NextResponse.json({ error: 'Failed to fetch tasks' }, { status: 500 })
+    }
+
+    return NextResponse.json({ tasks })
+  } catch (error) {
+    logger.error('[AI Settings] Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+

@@ -1,0 +1,98 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { NextResponse } from 'next/server'
+
+/**
+ * GET /api/profiles/check - Проверить наличие профилей у текущего пользователя
+ * Возвращает список профилей и (для совместимости) первый профиль как основной
+ */
+export async function GET() {
+  try {
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    // Определяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+
+    // Получаем список профилей
+    const profilesQuery = supabase
+      .from('profiles')
+      .select(`
+        *,
+        profile_locations (
+          id,
+          city,
+          address,
+          geo_location,
+          name,
+          phone,
+          email,
+          working_hours,
+          active,
+          is_main,
+          created_at,
+          updated_at,
+          details,
+          yandex_url,
+          yandex_rating,
+          yandex_review_count
+        )
+      `)
+      .order('created_at', { ascending: false })
+
+    if (!isAdmin) {
+      profilesQuery.eq('user_id', userId)
+    }
+
+    const { data: profiles, error: dbError } = await profilesQuery
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    const hasProfiles = profiles && profiles.length > 0
+    
+    return NextResponse.json({ 
+      exists: hasProfiles, 
+      profile: hasProfiles ? profiles[0] : null, // Для обратной совместимости
+      profiles: profiles || [] 
+    })
+  } catch (error: any) {
+    logger.error('API error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}

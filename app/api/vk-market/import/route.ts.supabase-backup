@@ -1,0 +1,272 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import {
+  getVKMarketItems,
+  getVKGroupInfo,
+  checkUserIsGroupAdmin,
+  extractGroupIdFromUrl,
+  convertVKItemToService,
+  resolveGroupScreenName,
+} from '@/lib/vk-api'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+/**
+ * POST /api/vk-market/import
+ * Импортирует товары/услуги из VK Market с OAuth верификацией
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const { vk_url, vk_access_token, profile_id } = body
+    
+    // Валидация
+    if (!vk_url || !vk_access_token || !profile_id) {
+      return NextResponse.json(
+        { error: 'vk_url, vk_access_token and profile_id are required' },
+        { status: 400 }
+      )
+    }
+    
+    const supabase = await createClient()
+    
+    // Проверяем аутентификацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+    
+    // Проверяем роль пользователя
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single()
+    
+    const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'moderator'
+    
+    // Проверяем доступ к профилю
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, user_id, city')
+      .eq('id', profile_id)
+      .single()
+    
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: 'Profile not found' },
+        { status: 404 }
+      )
+    }
+    
+    // Если не админ - проверяем владение профилем
+    if (!isAdmin && profile.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
+      )
+    }
+    
+    // ===== Проверка лимита: 1 импорт в день (ТОЛЬКО для обычных пользователей) =====
+    if (!isAdmin) {
+      const oneDayAgo = new Date()
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1)
+      
+      const { data: recentImports, error: limitsError } = await supabase
+        .from('vk_market_imports')
+        .select('id, imported_at')
+        .eq('user_id', user.id)
+        .gte('imported_at', oneDayAgo.toISOString())
+        .order('imported_at', { ascending: false })
+        .limit(1)
+      
+      if (limitsError) {
+        console.error('[VK Import] Error checking limits:', limitsError)
+      }
+      
+      if (recentImports && recentImports.length > 0) {
+        const lastImport = new Date(recentImports[0].imported_at)
+        const hoursLeft = Math.ceil((24 - (Date.now() - lastImport.getTime()) / (1000 * 60 * 60)) * 10) / 10
+        
+        return NextResponse.json(
+          {
+            error: 'Превышен лимит импортов',
+            details: `Вы можете импортировать услуги только 1 раз в день. Следующий импорт будет доступен через ${hoursLeft} часов.`,
+            next_available_at: new Date(lastImport.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+          },
+          { status: 429 }
+        )
+      }
+    } else {
+      console.log('[VK Import] Admin import - skipping rate limits')
+    }
+    
+    // Извлекаем ID группы из URL
+    let groupId = extractGroupIdFromUrl(vk_url)
+    if (!groupId) {
+      return NextResponse.json(
+        { error: 'Не удалось извлечь ID группы из URL' },
+        { status: 400 }
+      )
+    }
+    
+    // Если это screen_name, резолвим в ID
+    if (!/^\d+$/.test(groupId)) {
+      console.log('[VK Import] Resolving screen_name:', groupId)
+      const resolvedId = await resolveGroupScreenName(groupId, vk_access_token)
+      if (!resolvedId) {
+        return NextResponse.json(
+          { error: 'Группа не найдена' },
+          { status: 404 }
+        )
+      }
+      groupId = resolvedId
+    }
+    
+    console.log('[VK Import] Group ID:', groupId)
+    
+    // ===== ВЕРИФИКАЦИЯ ВЛАДЕНИЯ ГРУППОЙ (для обычных пользователей) =====
+    if (!isAdmin) {
+      console.log('[VK Import] Checking admin rights...')
+      const isGroupAdmin = await checkUserIsGroupAdmin(vk_access_token, groupId)
+      
+      if (!isGroupAdmin) {
+        return NextResponse.json(
+          {
+            error: 'Вы не являетесь администратором этой группы',
+            details: 'Для импорта товаров необходимо быть администратором, модератором или редактором группы ВКонтакте.',
+            verification_failed: true,
+          },
+          { status: 403 }
+        )
+      }
+      
+      console.log('[VK Import] ✅ Admin rights verified!')
+    } else {
+      console.log('[VK Import] Admin import - skipping ownership verification')
+    }
+    
+    // Получаем информацию о группе
+    // Для админов используем service token, для пользователей - их токен
+    const tokenToUse = isAdmin ? (process.env.VK_SERVICE_TOKEN || vk_access_token) : vk_access_token
+    
+    const groupInfo = await getVKGroupInfo(groupId, tokenToUse)
+    console.log('[VK Import] Group info:', groupInfo.name)
+    
+    // Получаем товары из VK Market
+    console.log('[VK Import] Fetching items from VK Market...')
+    const marketData = await getVKMarketItems(groupId, tokenToUse, 100)
+    
+    console.log('[VK Import] Found', marketData.count, 'items total,', marketData.items.length, 'loaded')
+    
+    if (marketData.items.length === 0) {
+      return NextResponse.json({
+        success: true,
+        imported: 0,
+        message: 'В группе нет товаров для импорта'
+      })
+    }
+    
+    // Конвертируем в формат наших услуг
+    const services = marketData.items
+      .filter(item => item.availability === 0) // Только доступные
+      .map(item => convertVKItemToService(item, groupInfo))
+    
+    console.log('[VK Import] Converting', services.length, 'available items')
+    
+    // Сохраняем в БД
+    const servicesToInsert = services.map((service, index) => ({
+      profile_id: profile_id,
+      name: service.name,
+      description: service.description,
+      price: parseFloat(service.price),
+      duration: null,
+      display_order: index,
+      is_active: true,
+      photos: service.photos,
+      metadata: {
+        source: 'vk_market',
+        ...service.vk_source,
+      }
+    }))
+    
+    const { data: insertedServices, error: insertError } = await supabase
+      .from('services')
+      .insert(servicesToInsert)
+      .select()
+    
+    if (insertError) {
+      console.error('[VK Import] Database error:', insertError)
+      
+      // Сохраняем неудачный импорт
+      await supabase.from('vk_market_imports').insert({
+        user_id: user.id,
+        profile_id: profile_id,
+        vk_group_id: groupId,
+        vk_group_name: groupInfo.name,
+        items_imported: 0,
+        items_total: marketData.count,
+        verified_ownership: true,
+        verification_method: 'oauth',
+        status: 'failed',
+        error_message: insertError.message,
+      })
+      
+      return NextResponse.json(
+        { error: 'Не удалось сохранить услуги', details: insertError.message },
+        { status: 500 }
+      )
+    }
+    
+    // Сохраняем успешный импорт
+    await supabase.from('vk_market_imports').insert({
+      user_id: user.id,
+      profile_id: profile_id,
+      vk_group_id: groupId,
+      vk_group_name: groupInfo.name,
+      items_imported: insertedServices.length,
+      items_total: marketData.count,
+      verified_ownership: !isAdmin, // Админы не проходят верификацию
+      verification_method: isAdmin ? 'admin_import' : 'oauth',
+      status: 'completed',
+    })
+    
+    console.log('[VK Import] ✅ Successfully imported', insertedServices.length, 'services')
+    
+    return NextResponse.json({
+      success: true,
+      imported: insertedServices.length,
+      total_found: marketData.count,
+      total_available: services.length,
+      group_name: groupInfo.name,
+      services: insertedServices,
+    })
+    
+  } catch (error: any) {
+    console.error('[VK Import] Error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

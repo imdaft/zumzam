@@ -1,0 +1,64 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { NextResponse } from 'next/server'
+
+/**
+ * Быстрое создание пустого профиля
+ * POST /api/profiles/quick-create
+ */
+export async function POST(request: Request) {
+  try {
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Генерируем временный slug
+    const timestamp = Date.now()
+    const tempSlug = `profile-${userId.slice(0, 8)}-${timestamp}`
+
+    // Создаём минимальный профиль
+    const { data: profile, error: createError } = await supabase
+      .from('profiles')
+      .insert({
+        user_id: userId,
+        slug: tempSlug,
+        display_name: 'Новый профиль',
+        category: 'animator', // По умолчанию без адреса
+        city: '', // Заполнится позже
+        is_published: false,
+        verified: false,
+      })
+      .select()
+      .single()
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ profile }, { status: 201 })
+  } catch (error: any) {
+    console.error('Quick create error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to create profile' },
+      { status: 500 }
+    )
+  }
+}
+

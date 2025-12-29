@@ -1,0 +1,92 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+// POST /api/folders/link — добавить/удалить диалог из папки
+// action: 'add' | 'remove'
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { folderId, conversationId, action } = body
+
+    if (!folderId || !conversationId || !action) {
+      return NextResponse.json({ error: 'Недостаточно данных' }, { status: 400 })
+    }
+
+    if (action === 'add') {
+      // Добавляем связь
+      const { error } = await supabase
+        .from('conversation_folder_links')
+        .insert({
+          folder_id: folderId,
+          conversation_id: conversationId
+        })
+        // Игнорируем дубликаты (onConflict do nothing не поддерживается напрямую insert'ом без настройки, 
+        // но у нас есть UNIQUE constraint, который вернет ошибку. 
+        // Лучше проверить существование или обработать ошибку)
+      
+      if (error) {
+        // Если ошибка уникальности (код 23505 в Postgres), то просто игнорируем
+        if (error.code === '23505') {
+           return NextResponse.json({ success: true, message: 'Already exists' })
+        }
+        console.error('[API Folders Link] Error adding:', error)
+        return NextResponse.json({ error: 'Ошибка добавления в папку' }, { status: 500 })
+      }
+    } else if (action === 'remove') {
+      // Удаляем связь
+      const { error } = await supabase
+        .from('conversation_folder_links')
+        .delete()
+        .eq('folder_id', folderId)
+        .eq('conversation_id', conversationId)
+
+      if (error) {
+        console.error('[API Folders Link] Error removing:', error)
+        return NextResponse.json({ error: 'Ошибка удаления из папки' }, { status: 500 })
+      }
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[API Folders Link] Error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

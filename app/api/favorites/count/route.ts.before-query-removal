@@ -1,0 +1,62 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/favorites/count
+ * Получение количества избранных профилей
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    // Подсчитываем количество избранного
+    const { count, error } = await supabase
+      .from('favorites')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+
+    if (error) {
+      logger.error('[Favorites API] Error counting favorites:', error)
+      return NextResponse.json(
+        { error: 'Ошибка подсчета избранного', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ count: count || 0 })
+  } catch (error: any) {
+    logger.error('[Favorites API] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера', details: error?.message },
+      { status: 500 }
+    )
+  }
+}
+
+

@@ -1,42 +1,43 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/lib/contexts/auth-context'
 
 export default function TestUserPage() {
+  const { user: authUser } = useAuth()
   const [status, setStatus] = useState('Loading...')
-  const [authUser, setAuthUser] = useState<any>(null)
   const [dbUser, setDbUser] = useState<any>(null)
   const [error, setError] = useState<any>(null)
 
   useEffect(() => {
     async function test() {
       try {
-        const supabase = createClient()
-
-        // 1. Проверяем auth
+        // 1. Проверяем auth через context
         setStatus('Checking auth...')
-        const { data: { user } } = await supabase.auth.getUser()
-        setAuthUser(user)
-
-        if (!user) {
+        
+        if (!authUser) {
           setStatus('No auth user')
           return
         }
 
-        // 2. Проверяем таблицу users
-        setStatus('Fetching from public.users...')
-        const { data, error: dbError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', user.id)
-          .single()
+        // 2. Проверяем таблицу users через API
+        setStatus('Fetching from /api/users/me...')
+        const response = await fetch('/api/users/me')
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          setError(errorData)
+          setStatus('Error fetching from DB')
+          return
+        }
 
-        if (dbError) {
-          setError(dbError)
+        const result = await response.json()
+        
+        if (result.error) {
+          setError(result.error)
           setStatus('Error fetching from DB')
         } else {
-          setDbUser(data)
+          setDbUser(result.data)
           setStatus('Success!')
         }
       } catch (err: any) {
@@ -45,8 +46,10 @@ export default function TestUserPage() {
       }
     }
 
-    test()
-  }, [])
+    if (authUser !== undefined) {
+      test()
+    }
+  }, [authUser])
 
   return (
     <div style={{ padding: '2rem', fontFamily: 'monospace' }}>
@@ -54,7 +57,7 @@ export default function TestUserPage() {
       
       <h2>Status: {status}</h2>
 
-      <h3>Auth User:</h3>
+      <h3>Auth User (from context):</h3>
       <pre>{JSON.stringify(authUser, null, 2)}</pre>
 
       <h3>DB User:</h3>

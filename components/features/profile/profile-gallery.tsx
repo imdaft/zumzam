@@ -1,152 +1,58 @@
 'use client'
 
 import { useState } from 'react'
-import { X, ChevronLeft, ChevronRight, Play } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import type { Profile } from '@/types'
-
-interface ProfileGalleryProps {
-  profile: Profile
-}
+import Image from 'next/image'
+import { Play } from 'lucide-react'
 
 /**
- * Галерея фото и видео профиля
+ * Галерея фото/видео
  */
-export function ProfileGallery({ profile }: ProfileGalleryProps) {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null)
-  const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0)
-
-  const photos = profile.photos || []
-  const videos = profile.videos || []
-
-  if (photos.length === 0 && videos.length === 0) {
+export function ProfileGallery({
+  photos,
+  videos,
+}: {
+  photos: string[]
+  videos?: string[]
+}) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  
+  if ((!photos || photos.length === 0) && (!videos || videos.length === 0)) {
     return null
   }
-
-  const openLightbox = (url: string, index: number) => {
-    setSelectedImage(url)
-    setSelectedImageIndex(index)
-  }
-
-  const closeLightbox = () => {
-    setSelectedImage(null)
-  }
-
-  const nextImage = () => {
-    const nextIndex = (selectedImageIndex + 1) % photos.length
-    setSelectedImageIndex(nextIndex)
-    setSelectedImage(photos[nextIndex])
-  }
-
-  const prevImage = () => {
-    const prevIndex = (selectedImageIndex - 1 + photos.length) % photos.length
-    setSelectedImageIndex(prevIndex)
-    setSelectedImage(photos[prevIndex])
-  }
-
+  
   return (
-    <div className="space-y-6">
-      {/* Фото */}
-      {photos.length > 0 && (
-        <div>
-          <h2 className="mb-4 text-2xl font-bold">Фотографии</h2>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {photos.map((photo, index) => (
-              <button
-                key={photo}
-                onClick={() => openLightbox(photo, index)}
-                className="group relative aspect-video overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
-              >
-                <img
-                  src={photo}
-                  alt={`Фото ${index + 1}`}
-                  className="h-full w-full object-cover transition-transform group-hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Видео */}
-      {videos.length > 0 && (
-        <div>
-          <h2 className="mb-4 text-2xl font-bold">Видео</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {videos.map((video, index) => (
-              <div
-                key={video}
-                className="relative aspect-video overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
-              >
-                <video
-                  src={video}
-                  controls
-                  className="h-full w-full object-cover"
-                  preload="metadata"
-                >
-                  Ваш браузер не поддерживает воспроизведение видео.
-                </video>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Lightbox для просмотра фото */}
-      {selectedImage && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-          onClick={closeLightbox}
-        >
-          {/* Кнопка закрытия */}
+    <div className="bg-white rounded-[32px] p-6 shadow-sm border border-slate-100">
+      <h2 className="text-2xl font-bold text-slate-900 mb-4">Фотогалерея</h2>
+      
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {photos.map((photo, idx) => (
           <button
-            onClick={closeLightbox}
-            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+            key={idx}
+            type="button"
+            onClick={() => setSelectedIndex(idx)}
+            className="relative aspect-square rounded-xl overflow-hidden hover:opacity-90 transition"
           >
-            <X className="h-6 w-6" />
+            <Image
+              src={photo}
+              alt={`Фото ${idx + 1}`}
+              fill
+              className="object-cover"
+            />
           </button>
-
-          {/* Навигация */}
-          {photos.length > 1 && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  prevImage()
-                }}
-                className="absolute left-4 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
-              >
-                <ChevronLeft className="h-6 w-6" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  nextImage()
-                }}
-                className="absolute right-4 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
-              >
-                <ChevronRight className="h-6 w-6" />
-              </button>
-            </>
-          )}
-
-          {/* Изображение */}
-          <img
-            src={selectedImage}
-            alt="Просмотр"
-            className="max-h-full max-w-full object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-
-          {/* Счётчик */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-sm text-white">
-            {selectedImageIndex + 1} / {photos.length}
-          </div>
-        </div>
-      )}
+        ))}
+        
+        {videos?.map((video, idx) => (
+          <button
+            key={`video-${idx}`}
+            type="button"
+            className="relative aspect-square rounded-xl overflow-hidden bg-slate-900 hover:opacity-90 transition"
+          >
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Play className="w-12 h-12 text-white" />
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
-
-

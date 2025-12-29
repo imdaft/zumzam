@@ -1,47 +1,39 @@
-import { createServerClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 /**
  * GET /api/reviews/[id] - Получить один отзыв
  */
-export async function GET(request: Request, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const supabase = await createServerClient()
+    const { id } = await params
 
-    const { data: review, error } = await supabase
-      .from('reviews')
-      .select(`
-        *,
-        profiles:profile_id (
-          id,
-          slug,
-          display_name,
-          avatar_url
-        ),
-        authors:author_id (
-          id,
-          email,
-          full_name
-        )
-      `)
-      .eq('id', params.id)
-      .single()
-
-    if (error) {
-      console.error('Get review error:', error)
-      if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { error: 'Review not found' },
-          { status: 404 }
-        )
+    const review = await prisma.reviews.findUnique({
+      where: { id },
+      include: {
+        profiles: {
+          select: {
+            id: true,
+            slug: true,
+            display_name: true,
+            cover_photo: true,
+          }
+        }
       }
-      throw error
+    })
+
+    if (!review) {
+      return NextResponse.json(
+        { error: 'Review not found' },
+        { status: 404 }
+      )
     }
 
     return NextResponse.json({ review })
@@ -57,38 +49,48 @@ export async function GET(request: Request, { params }: RouteParams) {
 /**
  * PATCH /api/reviews/[id] - Обновить отзыв
  */
-export async function PATCH(request: Request, { params }: RouteParams) {
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const supabase = await createServerClient()
-    
-    // Проверка авторизации
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const { id } = await params
+
+    // Проверка авторизации через JWT
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
     const body = await request.json()
-    const { comment, photos, is_approved, is_hidden } = body
+    const { comment, photos, rating } = body
 
     // Получаем текущий отзыв
-    const { data: currentReview, error: fetchError } = await supabase
-      .from('reviews')
-      .select('id, author_id, profile_id')
-      .eq('id', params.id)
-      .single()
+    const currentReview = await prisma.reviews.findUnique({
+      where: { id },
+      select: { id: true, user_id: true, profile_id: true }
+    })
 
-    if (fetchError || !currentReview) {
+    if (!currentReview) {
       return NextResponse.json(
         { error: 'Review not found' },
         { status: 404 }
       )
     }
 
-    // Проверка прав доступа
-    // Автор может редактировать текст и фото
-    // Админ может модерировать (is_approved, is_hidden)
-    const isAuthor = currentReview.author_id === user.id
-    const isAdmin = false // TODO: добавить проверку роли админа
+    // Проверка прав доступа (только автор)
+    const isAuthor = currentReview.user_id === userId
+
+    // Проверяем роль админа
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    })
+    const isAdmin = user?.role === 'admin'
 
     if (!isAuthor && !isAdmin) {
       return NextResponse.json(
@@ -98,57 +100,34 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     }
 
     // Формируем данные для обновления
-    const updateData: any = {
-      updated_at: new Date().toISOString(),
-    }
+    const updateData: any = {}
 
     if (isAuthor) {
       if (comment !== undefined) {
         updateData.comment = comment
       }
-      if (photos !== undefined) {
-        updateData.photos = photos
-      }
-    }
-
-    if (isAdmin) {
-      if (is_approved !== undefined) {
-        updateData.is_approved = is_approved
-      }
-      if (is_hidden !== undefined) {
-        updateData.is_hidden = is_hidden
+      if (rating !== undefined) {
+        updateData.rating = rating
       }
     }
 
     // Обновление отзыва
-    const { data: review, error: updateError } = await supabase
-      .from('reviews')
-      .update(updateData)
-      .eq('id', params.id)
-      .select(`
-        *,
-        profiles:profile_id (
-          id,
-          slug,
-          display_name
-        ),
-        authors:author_id (
-          id,
-          email,
-          full_name
-        )
-      `)
-      .single()
+    const review = await prisma.reviews.update({
+      where: { id },
+      data: updateData,
+      include: {
+        profiles: {
+          select: {
+            id: true,
+            slug: true,
+            display_name: true,
+          }
+        }
+      }
+    })
 
-    if (updateError) {
-      console.error('Update review error:', updateError)
-      throw updateError
-    }
-
-    // Если изменился статус одобрения, обновляем рейтинг профиля
-    if (is_approved !== undefined || is_hidden !== undefined) {
-      await updateProfileRating(supabase, currentReview.profile_id)
-    }
+    // Обновляем рейтинг профиля
+    await updateProfileRating(currentReview.profile_id)
 
     return NextResponse.json({
       review,
@@ -166,24 +145,30 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 /**
  * DELETE /api/reviews/[id] - Удалить отзыв
  */
-export async function DELETE(request: Request, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const supabase = await createServerClient()
-    
-    // Проверка авторизации
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const { id } = await params
+
+    // Проверка авторизации через JWT
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Получаем текущий отзыв
-    const { data: currentReview, error: fetchError } = await supabase
-      .from('reviews')
-      .select('id, author_id, profile_id')
-      .eq('id', params.id)
-      .single()
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
 
-    if (fetchError || !currentReview) {
+    const userId = payload.sub
+
+    // Получаем текущий отзыв
+    const currentReview = await prisma.reviews.findUnique({
+      where: { id },
+      select: { id: true, user_id: true, profile_id: true }
+    })
+
+    if (!currentReview) {
       return NextResponse.json(
         { error: 'Review not found' },
         { status: 404 }
@@ -191,8 +176,13 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     }
 
     // Только автор или админ может удалить
-    const isAuthor = currentReview.author_id === user.id
-    const isAdmin = false // TODO: добавить проверку роли админа
+    const isAuthor = currentReview.user_id === userId
+
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    })
+    const isAdmin = user?.role === 'admin'
 
     if (!isAuthor && !isAdmin) {
       return NextResponse.json(
@@ -202,18 +192,12 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     }
 
     // Удаление
-    const { error: deleteError } = await supabase
-      .from('reviews')
-      .delete()
-      .eq('id', params.id)
-
-    if (deleteError) {
-      console.error('Delete review error:', deleteError)
-      throw deleteError
-    }
+    await prisma.reviews.delete({
+      where: { id }
+    })
 
     // Обновляем рейтинг профиля
-    await updateProfileRating(supabase, currentReview.profile_id)
+    await updateProfileRating(currentReview.profile_id)
 
     return NextResponse.json({
       message: 'Review deleted successfully',
@@ -230,36 +214,32 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 /**
  * Обновление рейтинга профиля
  */
-async function updateProfileRating(supabase: any, profileId: string) {
+async function updateProfileRating(profileId: string) {
   try {
-    const { data: reviews } = await supabase
-      .from('reviews')
-      .select('rating')
-      .eq('profile_id', profileId)
-      .eq('is_approved', true)
-      .eq('is_hidden', false)
+    const reviews = await prisma.reviews.findMany({
+      where: { profile_id: profileId },
+      select: { rating: true }
+    })
 
     if (!reviews || reviews.length === 0) {
-      await supabase
-        .from('profiles')
-        .update({ rating: 0, reviews_count: 0 })
-        .eq('id', profileId)
+      await prisma.profiles.update({
+        where: { id: profileId },
+        data: { rating: 0, reviews_count: 0 }
+      })
       return
     }
 
-    const totalRating = reviews.reduce((sum: number, r: any) => sum + r.rating, 0)
+    const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0)
     const avgRating = totalRating / reviews.length
 
-    await supabase
-      .from('profiles')
-      .update({
+    await prisma.profiles.update({
+      where: { id: profileId },
+      data: {
         rating: Number(avgRating.toFixed(1)),
         reviews_count: reviews.length,
-      })
-      .eq('id', profileId)
+      }
+    })
   } catch (error) {
     console.error('Update profile rating error:', error)
   }
 }
-
-

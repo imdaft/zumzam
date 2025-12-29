@@ -1,0 +1,192 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const resolvedParams = await params
+    const campaignId = resolvedParams.id
+    
+    console.log('[Analytics API] 🔍 Request for campaign:', campaignId)
+    
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+
+    // Auth check done above, { status: 401 })
+    }
+
+    console.log('[Analytics API] ✅ User authenticated:', userId)
+
+    // Проверяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+    console.log('[Analytics API] 👤 User role:', userData?.role)
+
+    // Проверяем что кампания принадлежит пользователю
+    console.log('[Analytics API] 🔎 Fetching campaign:', campaignId)
+    
+    // Сначала проверяем существование кампании
+    const { data: campaign, error: campaignError } = await supabase
+      .from('ad_campaigns')
+      .select('id, title, user_id, profile_id, stats')
+      .eq('id', campaignId)
+      .single()
+
+    if (campaignError || !campaign) {
+      console.error('[Analytics API] ❌ Campaign not found:', campaignError)
+      return NextResponse.json(
+        { error: 'Campaign not found', details: campaignError?.message },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем права доступа (админы имеют доступ ко всем кампаниям)
+    if (!isAdmin && campaign.user_id !== userId) {
+      console.error('[Analytics API] ❌ Access denied: campaign.user_id !== userId')
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    console.log('[Analytics API] ✅ Campaign found:', campaign.title)
+
+    // Собираем аналитику
+    console.log('[Analytics API] 📊 Fetching impressions...')
+    const { data: impressions, error: impressionsError } = await supabase
+      .from('ad_impressions')
+      .select('*')
+      .eq('campaign_id', campaignId)
+
+    if (impressionsError) {
+      console.error('[Analytics API] ❌ Impressions error:', impressionsError)
+      throw impressionsError
+    }
+
+    console.log('[Analytics API] ✅ Found impressions:', impressions?.length || 0)
+
+    // Группируем по устройствам
+    const deviceStats: Record<string, number> = {}
+    impressions?.forEach(imp => {
+      const device = imp.device_type || 'unknown'
+      deviceStats[device] = (deviceStats[device] || 0) + 1
+    })
+
+    // Группируем по браузерам
+    const browserStats: Record<string, number> = {}
+    impressions?.forEach(imp => {
+      const browser = imp.browser || 'unknown'
+      browserStats[browser] = (browserStats[browser] || 0) + 1
+    })
+
+    // Группируем по ОС
+    const osStats: Record<string, number> = {}
+    impressions?.forEach(imp => {
+      const os = imp.os || 'unknown'
+      osStats[os] = (osStats[os] || 0) + 1
+    })
+
+    // Группируем по городам
+    const cityStats: Record<string, number> = {}
+    impressions?.forEach(imp => {
+      if (imp.city) {
+        cityStats[imp.city] = (cityStats[imp.city] || 0) + 1
+      }
+    })
+
+    // Группируем по странам
+    const countryStats: Record<string, number> = {}
+    impressions?.forEach(imp => {
+      if (imp.country) {
+        countryStats[imp.country] = (countryStats[imp.country] || 0) + 1
+      }
+    })
+
+    // Группируем по referrer
+    const referrerStats: Record<string, number> = {}
+    impressions?.forEach(imp => {
+      if (imp.referrer) {
+        referrerStats[imp.referrer] = (referrerStats[imp.referrer] || 0) + 1
+      }
+    })
+
+    // Среднее время на странице
+    const validTimes = impressions?.filter(imp => imp.time_on_page).map(imp => imp.time_on_page) || []
+    const avgTimeOnPage = validTimes.length > 0
+      ? Math.round(validTimes.reduce((sum, time) => sum + time, 0) / validTimes.length)
+      : 0
+
+    // Timeline по дням
+    const timeline: Record<string, { impressions: number; clicks: number }> = {}
+    impressions?.forEach(imp => {
+      const date = new Date(imp.created_at).toISOString().split('T')[0]
+      if (!timeline[date]) {
+        timeline[date] = { impressions: 0, clicks: 0 }
+      }
+      if (imp.action === 'impression') {
+        timeline[date].impressions++
+      } else if (imp.action === 'click') {
+        timeline[date].clicks++
+      }
+    })
+
+    return NextResponse.json({
+      campaign: {
+        id: campaign.id,
+        title: campaign.title,
+        stats: campaign.stats || { impressions: 0, clicks: 0, spent: 0 }
+      },
+      demographics: {
+        devices: Object.entries(deviceStats)
+          .map(([device_type, count]) => ({ device_type, count }))
+          .sort((a, b) => b.count - a.count),
+        browsers: Object.entries(browserStats)
+          .map(([browser, count]) => ({ browser, count }))
+          .sort((a, b) => b.count - a.count),
+        os: Object.entries(osStats)
+          .map(([os, count]) => ({ os, count }))
+          .sort((a, b) => b.count - a.count),
+        cities: Object.entries(cityStats)
+          .map(([city, count]) => ({ city, count }))
+          .sort((a, b) => b.count - a.count),
+        countries: Object.entries(countryStats)
+          .map(([country, count]) => ({ country, count }))
+          .sort((a, b) => b.count - a.count)
+      },
+      timeline: Object.entries(timeline)
+        .map(([date, stats]) => ({ date, ...stats }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      topReferrers: Object.entries(referrerStats)
+        .map(([referrer, count]) => ({ referrer, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10),
+      avgTimeOnPage,
+      bounceRate: 0 // TODO: calculate bounce rate
+    })
+  } catch (error: any) {
+    console.error('[Campaign Analytics API] Error:', error)
+    return NextResponse.json(
+      { error: 'Internal error', details: error?.message },
+      { status: 500 }
+    )
+  }
+}
+

@@ -1,0 +1,109 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+// GET /api/folders — получить все папки пользователя
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above, { status: 401 })
+    }
+
+    // Получаем папки и количество диалогов в них
+    // (В данном случае просто папки, ссылки подтянем отдельно или на клиенте)
+    const { data: folders, error } = await supabase
+      .from('conversation_folders')
+      .select('*')
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('[API Folders] Error fetching:', error)
+      return NextResponse.json({ error: 'Ошибка загрузки папок' }, { status: 500 })
+    }
+
+    return NextResponse.json({ folders: folders || [] })
+  } catch (error) {
+    console.error('[API Folders] Error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+// POST /api/folders — создать папку
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { name } = body
+
+    if (!name || !name.trim()) {
+      return NextResponse.json({ error: 'Название папки обязательно' }, { status: 400 })
+    }
+
+    const { data: folder, error } = await supabase
+      .from('conversation_folders')
+      .insert({
+        user_id: userId,
+        name: name.trim()
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[API Folders] Error creating:', error)
+      return NextResponse.json({ error: 'Ошибка создания папки' }, { status: 500 })
+    }
+
+    return NextResponse.json({ folder })
+  } catch (error) {
+    console.error('[API Folders] Error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

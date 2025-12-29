@@ -1,0 +1,372 @@
+/**
+ * API endpoint для AI расширения изображений категорий
+ * POST /api/ai/expand-category-image
+ *
+ * Использует Gemini (3 Pro, 2.5 Flash, 2.0 Flash Exp) и Imagen 4 для outpainting.
+ * Стоимость: 10 кредитов за одно расширение.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { randomUUID } from 'crypto'
+import sharp from 'sharp'
+
+export const runtime = 'nodejs'
+
+const EXPAND_COST = 10
+const GEMINI_IMAGE_FAILURE_PREFIX = 'GEMINI_IMAGE_FAILURE:'
+
+type ExpandDirection = 'top' | 'bottom' | 'left' | 'right' | 'all'
+
+function normalizeDirection(direction: unknown): ExpandDirection {
+  const d = String(direction || 'all') as ExpandDirection
+  if (d === 'top' || d === 'bottom' || d === 'left' || d === 'right' || d === 'all') return d
+  return 'all'
+}
+
+export async function POST(request: NextRequest) {
+  const requestId = randomUUID()
+
+  try {
+    // Supabase client removed
+
+    // Проверяем авторизацию и admin роль
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    // Auth check done above, { status: 401 })
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role, credits')
+      .eq('id', userId)
+      .single()
+
+    if (!userData || userData.role !== 'admin') {
+      return NextResponse.json({ error: 'Требуется роль Admin' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const categoryId = body?.categoryId
+    const imageUrl = body?.imageUrl
+    const direction = normalizeDirection(body?.direction)
+    const expandPercentRaw = Number(body?.expandPercent)
+    const expandPercent = Number.isFinite(expandPercentRaw) ? Math.max(5, Math.min(60, expandPercentRaw)) : 40
+    const mode = (body?.mode === 'mobile') ? 'mobile' : 'desktop' // desktop или mobile
+
+    if (!categoryId || !imageUrl) {
+      return NextResponse.json({ error: 'Необходимо указать categoryId и imageUrl' }, { status: 400 })
+    }
+
+    logger.info(`[${requestId}] AI expand category image: categoryId=${categoryId}, mode=${mode}, direction=${direction}, percent=${expandPercent}%`)
+
+    const currentCredits = userData.credits || 0
+    if (currentCredits < EXPAND_COST) {
+      return NextResponse.json(
+        { error: `Недостаточно кредитов. Требуется ${EXPAND_COST}, доступно ${currentCredits}` },
+        { status: 402 }
+      )
+    }
+
+    // Gemini
+    const geminiApiKey = process.env.GEMINI_API_KEY
+    if (!geminiApiKey) {
+      return NextResponse.json({ error: 'AI сервис временно недоступен', requestId }, { status: 503 })
+    }
+
+    const genAI = new GoogleGenerativeAI(geminiApiKey)
+
+    // Загружаем исходное изображение
+    const imageResponse = await fetch(imageUrl, { cache: 'no-store' })
+    if (!imageResponse.ok) {
+      throw new Error('Не удалось загрузить изображение')
+    }
+
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer())
+
+    // --- ФИЗИЧЕСКОЕ РАСШИРЕНИЕ ХОЛСТА (PRE-EXPANSION) ---
+    // Используем REPEAT extension (растягивание) для создания явных артефактов,
+    // которые AI будет вынужден перерисовать.
+    logger.info(`[${requestId}] Pre-expanding canvas using REPEAT (smear) extension...`)
+    
+    const originalMetadata = await sharp(imageBuffer).metadata()
+    const width = originalMetadata.width || 1024
+    const height = originalMetadata.height || 1024
+    const expansionFactor = expandPercent / 100
+    
+    let top = 0, bottom = 0, left = 0, right = 0;
+    
+    if (direction === 'top') {
+      top = Math.round(height * expansionFactor)
+    } else if (direction === 'bottom') {
+      bottom = Math.round(height * expansionFactor)
+    } else if (direction === 'left') {
+      left = Math.round(width * expansionFactor)
+    } else if (direction === 'right') {
+      right = Math.round(width * expansionFactor)
+    } else if (direction === 'all') {
+      const wFactor = expansionFactor / 2
+      const hFactor = expansionFactor / 2
+      top = Math.round(height * hFactor)
+      bottom = Math.round(height * hFactor)
+      left = Math.round(width * wFactor)
+      right = Math.round(width * wFactor)
+    }
+
+    // Создаем расширенный холст с растянутыми краями
+    const expandedCanvasBuffer = await sharp(imageBuffer)
+      .extend({
+        top,
+        bottom,
+        left,
+        right,
+        extendWith: 'repeat' // Растягивание!
+      })
+      .jpeg({ quality: 95 })
+      .toBuffer()
+
+    const expandedMimeType = 'image/jpeg'
+    logger.info(`[${requestId}] Canvas expanded. Added: T:${top} B:${bottom} L:${left} R:${right}`)
+
+    // --- GENERATION LOOP WITH MODEL FALLBACK ---
+    // Порядок: Сначала самые мощные/новые, затем стабильные, затем экспериментальные
+    const modelsToTry = [
+      'gemini-3-pro-image-preview', 
+      'imagen-4.0-generate-001',
+      'gemini-2.5-flash-image', 
+      'gemini-2.0-flash-exp'
+    ]
+    
+    let generatedImageBase64: string | null = null
+    let lastResponse: any = null
+    let usedModel = ''
+
+    for (const modelName of modelsToTry) {
+      logger.info(`[${requestId}] Trying model: ${modelName}`)
+      
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+        } as any)
+
+        const attemptGenerate = async (attemptLabel: string, percent: number, promptText: string, bytes: Buffer, mimeType: string) => {
+          logger.info(`[${requestId}] ${modelName} attempt=${attemptLabel} direction=${direction} percent=${percent}`)
+
+          const result = await model.generateContent([
+            { inlineData: { data: bytes.toString('base64'), mimeType } },
+            { text: promptText },
+          ])
+
+          const response = result.response
+          
+          for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData?.data) {
+              return { imageBase64: part.inlineData.data as string, response }
+            }
+          }
+          
+          return { imageBase64: null as string | null, response }
+        }
+
+        const percent1 = expandPercent
+        const percent2 = Math.min(30, percent1)
+        const percent3 = Math.min(20, percent2)
+
+        const prompt1 = getExpansionPrompt(direction, String(categoryId), percent1)
+        const prompt2 = getFallbackExpansionPrompt(direction, percent2)
+        const prompt3 = getFallbackExpansionPrompt(direction, percent3)
+
+        // Attempt 1: Primary
+        let a = await attemptGenerate('primary', percent1, prompt1, expandedCanvasBuffer, expandedMimeType)
+        if (a.imageBase64) {
+          generatedImageBase64 = a.imageBase64
+          usedModel = modelName
+          break // Success!
+        }
+        lastResponse = a.response
+
+        // Attempt 2: Fallback 1 (Smaller percent)
+        if (percent2 !== percent1) {
+          a = await attemptGenerate('fallback-1', percent2, prompt2, expandedCanvasBuffer, expandedMimeType)
+          if (a.imageBase64) {
+            generatedImageBase64 = a.imageBase64
+            usedModel = modelName
+            break // Success!
+          }
+          lastResponse = a.response
+        }
+
+        // Attempt 3: Resized (if primary failed)
+        try {
+           const resized = await sharp(expandedCanvasBuffer)
+            .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 95 }).toBuffer()
+            
+           const resizedPrompt = getFallbackExpansionPrompt(direction, 15)
+           a = await attemptGenerate('resized', 15, resizedPrompt, resized, 'image/jpeg')
+           if (a.imageBase64) {
+             generatedImageBase64 = a.imageBase64
+             usedModel = modelName
+             break // Success!
+           }
+           lastResponse = a.response
+        } catch(e) { logger.error('Resize attempt failed', e) }
+
+      } catch (e) {
+        logger.error(`[${requestId}] Error with model ${modelName}:`, e)
+        // Continue to next model loop
+      }
+    }
+
+    if (!generatedImageBase64) {
+      const finishReason = lastResponse?.candidates?.[0]?.finishReason
+      const finishMessage = (lastResponse?.candidates?.[0] as any)?.finishMessage
+      const safetyRatings = lastResponse?.candidates?.[0]?.safetyRatings
+      const promptFeedback = (lastResponse as any)?.promptFeedback
+
+      // Проверяем, есть ли блокировка по safety/copyright
+      let blockReason = ''
+      if (promptFeedback?.blockReason) {
+        blockReason = ` (блокировка: ${promptFeedback.blockReason})`
+      } else if (Array.isArray(safetyRatings) && safetyRatings.some((r: any) => r.blocked)) {
+        const blockedCategories = safetyRatings.filter((r: any) => r.blocked).map((r: any) => r.category).join(', ')
+        blockReason = ` (блокировка категорий: ${blockedCategories})`
+      }
+
+      throw new Error(
+        `${GEMINI_IMAGE_FAILURE_PREFIX}Все модели (${modelsToTry.join(', ')}) не вернули изображение. Последняя ошибка: ${finishReason}${blockReason}. ${finishMessage ? `message=${finishMessage}. ` : ''}`
+      )
+    }
+
+    // Upload to Supabase Storage
+    const generatedImageBuffer = Buffer.from(generatedImageBase64, 'base64')
+
+    const fileName = `categories/${categoryId}-${mode}-expanded-${direction}-${Date.now()}.png`
+    const { error: uploadError } = await supabase.storage.from('profile-images').upload(fileName, generatedImageBuffer, {
+      contentType: 'image/png',
+      upsert: false,
+    })
+
+    if (uploadError) {
+      throw new Error('Ошибка загрузки расширенного изображения')
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from('profile-images').getPublicUrl(fileName)
+
+    // Обновляем original_image_url на расширенную версию
+    // desktop_image_url и mobile_image_url остаются без изменений (это физически обрезанные версии)
+    // Параметры кропа (desktop_crop, mobile_crop) остаются без изменений
+    await supabase
+      .from('category_images')
+      .upsert(
+        {
+          category_id: String(categoryId),
+          original_image_url: publicUrl,  // Обновляем ОРИГИНАЛ на расширенную версию
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'category_id' }
+      )
+
+    // Списываем кредиты ПОСЛЕ успешной генерации/загрузки
+    const newBalance = currentCredits - EXPAND_COST
+    await prisma.users.update({ credits: newBalance }).eq('id', userId)
+
+    if (updateError) {
+      logger.error(`[${requestId}] Failed to deduct credits`, updateError)
+      return NextResponse.json(
+        { error: 'Изображение создано, но не удалось списать кредиты. Обратитесь в поддержку.', requestId },
+        { status: 500 }
+      )
+    }
+
+    await prisma.credit_transactions.insert({
+      user_id: userId,
+      amount: -EXPAND_COST,
+      description: `AI расширение ${mode} изображения категории ${categoryId} на ${expandPercent}% (${direction}) (Model: ${usedModel})`,
+      balance_after: newBalance,
+      metadata: { requestId, categoryId, mode, direction, expandPercent, usedModel },
+    })
+
+    return NextResponse.json({
+      success: true,
+      imageUrl: publicUrl,
+      mode,
+      creditsUsed: EXPAND_COST,
+      creditsRemaining: newBalance,
+      requestId,
+      usedModel,
+    })
+  } catch (error) {
+    logger.error(`[${requestId}] Ошибка AI расширения изображения категории`, { error })
+
+    const message = error instanceof Error ? error.message : 'Не удалось расширить изображение'
+    const isGeminiImageFailure = typeof message === 'string' && message.startsWith(GEMINI_IMAGE_FAILURE_PREFIX)
+
+    return NextResponse.json(
+      {
+        error: isGeminiImageFailure ? message.slice(GEMINI_IMAGE_FAILURE_PREFIX.length) : message,
+        requestId,
+      },
+      { status: isGeminiImageFailure ? 422 : 500 }
+    )
+  }
+}
+
+function getExpansionPrompt(direction: ExpandDirection, categoryId: string, expandPercent: number): string {
+  const baseInstruction = `The edges of this image have been artificially STRETCHED (smeared).
+Your task is to REDRAW these stretched areas to create a natural, seamless extension.
+
+KEY RULES:
+- The edges currently look like long, unnatural streaks of color. FIX THIS.
+- Use the colors from the streaks as a guide, but draw REAL textures (sky, floor, wall, foliage).
+- Remove the linear artifacts and smear effect completely.
+- Match the lighting and perspective of the center original.
+- DO NOT add new people or focal objects.
+
+OUTPUT: Return ONLY the corrected natural IMAGE (no text).`
+
+  const directionPrompts: Record<ExpandDirection, string> = {
+    top: `${baseInstruction}
+
+DIRECTION: Fix the smeared area at the TOP.
+Replace vertical streaks with natural ceiling/sky/upper background.`,
+
+    bottom: `${baseInstruction}
+
+DIRECTION: Fix the smeared area at the BOTTOM.
+Replace vertical streaks with natural floor/ground texture.`,
+
+    left: `${baseInstruction}
+
+DIRECTION: Fix the smeared area at the LEFT.
+Replace horizontal streaks with natural wall/background texture.`,
+
+    right: `${baseInstruction}
+
+DIRECTION: Fix the smeared area at the RIGHT.
+Replace horizontal streaks with natural wall/background texture.`,
+
+    all: `${baseInstruction}
+
+DIRECTION: Fix the smeared areas on ALL SIDES.
+Remove all streaking artifacts and make the background look continuous and natural.`,
+  }
+
+  return directionPrompts[direction]
+}
+
+function getFallbackExpansionPrompt(direction: ExpandDirection, expandPercent: number): string {
+  return `Fix the stretched/smeared edges of this image.
+Redraw the streaks as natural background texture.
+Match style and colors.
+Return IMAGE output only.`
+}

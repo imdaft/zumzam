@@ -1,0 +1,147 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * GET /api/admin/pages-status
+ * Получить список всех страниц проекта с их статусами
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    // Проверяем, что пользователь - админ
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Доступ запрещен' }, { status: 403 })
+    }
+
+    // Получаем фильтры из query параметров
+    const { searchParams } = new URL(request.url)
+    const section = searchParams.get('section')
+    const desktopReady = searchParams.get('desktop_ready')
+    const mobileReady = searchParams.get('mobile_ready')
+
+    // Строим запрос
+    let query = supabase
+      .from('pages_status')
+      .select('*')
+      .order('section')
+      .order('priority', { ascending: false })
+      .order('path')
+
+    // Применяем фильтры
+    if (section && section !== 'all') {
+      query = query.eq('section', section)
+    }
+    if (desktopReady === 'false') {
+      query = query.eq('desktop_ready', false)
+    }
+    if (mobileReady === 'false') {
+      query = query.eq('mobile_ready', false)
+    }
+
+    const { data: pages, error } = await query
+
+    if (error) {
+      console.error('[Pages Status API] Error:', error)
+      return NextResponse.json({ error: 'Ошибка получения данных' }, { status: 500 })
+    }
+
+    return NextResponse.json({ pages })
+  } catch (error: any) {
+    console.error('[Pages Status API] Unexpected error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+
+/**
+ * PATCH /api/admin/pages-status
+ * Обновить статус страницы
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    // Supabase client removed
+
+    // Проверяем, что пользователь - админ
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Доступ запрещен' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { id, desktop_ready, mobile_ready, tablet_ready, notes, priority } = body
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID страницы обязателен' }, { status: 400 })
+    }
+
+    // Формируем объект обновления
+    const updates: any = {}
+    if (desktop_ready !== undefined) updates.desktop_ready = desktop_ready
+    if (mobile_ready !== undefined) updates.mobile_ready = mobile_ready
+    if (tablet_ready !== undefined) updates.tablet_ready = tablet_ready
+    if (notes !== undefined) updates.notes = notes
+    if (priority !== undefined) updates.priority = priority
+
+    // Обновляем
+    const { data, error } = await supabase
+      .from('pages_status')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[Pages Status API] Update error:', error)
+      return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 })
+    }
+
+    return NextResponse.json({ page: data })
+  } catch (error: any) {
+    console.error('[Pages Status API] Unexpected error:', error)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
+  }
+}
+

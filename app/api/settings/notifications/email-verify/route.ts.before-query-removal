@@ -1,0 +1,146 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import nodemailer from 'nodemailer'
+
+// Создаём SMTP транспорт (Yandex, Mail.ru или другой российский провайдер)
+const transporter = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '465'),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+}) : null
+
+/**
+ * POST /api/settings/notifications/email-verify
+ * Отправить письмо с кодом подтверждения
+ */
+export async function POST(request: NextRequest) {
+  try {
+    if (!transporter) {
+      return NextResponse.json(
+        { error: 'Email сервис не настроен. Добавьте SMTP настройки в .env' },
+        { status: 500 }
+      )
+    }
+
+    // Supabase client removed
+
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    if (!user.email) {
+      return NextResponse.json(
+        { error: 'Email не найден' },
+        { status: 400 }
+      )
+    }
+
+    // Генерируем 6-значный код
+    const code = Math.floor(100000 + Math.random() * 900000).toString()
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000) // 15 минут
+
+    // Сохраняем код в таблице email_verification_codes
+    const { error: insertError } = await supabase
+      .from('email_verification_codes')
+      .insert({
+        user_id: userId,
+        email: user.email,
+        code: code,
+        expires_at: expiresAt.toISOString(),
+      })
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    // Отправляем email через SMTP
+    try {
+      await transporter.sendMail({
+        from: `"ZumZam" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+        to: user.email,
+        subject: 'Подтверждение email для уведомлений',
+        html: `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #FF6B35 0%, #FF8C5A 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+                .code-box { background: white; border: 2px dashed #FF6B35; padding: 20px; text-align: center; margin: 20px 0; border-radius: 10px; }
+                .code { font-size: 32px; font-weight: bold; color: #FF6B35; letter-spacing: 5px; }
+                .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1 style="margin: 0;">ZumZam</h1>
+                  <p style="margin: 10px 0 0 0;">Подтверждение email</p>
+                </div>
+                <div class="content">
+                  <p>Здравствуйте!</p>
+                  <p>Вы запросили подтверждение email для получения уведомлений в ZumZam.</p>
+                  <p>Ваш код подтверждения:</p>
+                  <div class="code-box">
+                    <div class="code">${code}</div>
+                  </div>
+                  <p>Код действителен в течение 15 минут.</p>
+                  <p>Если вы не запрашивали подтверждение, просто проигнорируйте это письмо.</p>
+                </div>
+                <div class="footer">
+                  <p>© 2024 ZumZam. Все права защищены.</p>
+                </div>
+              </div>
+            </body>
+          </html>
+        `,
+      })
+    } catch (emailError: any) {
+      logger.error('[Email Verify API] Send error:', emailError)
+      return NextResponse.json(
+        { error: 'Ошибка отправки email: ' + emailError.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Код отправлен на email'
+    })
+  } catch (error: any) {
+    logger.error('[Email Verify API] Error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

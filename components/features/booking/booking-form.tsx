@@ -190,7 +190,11 @@ export function BookingForm({
                       min="1" 
                       max="18"
                       className="pl-10"
-                      {...field} 
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
                     />
                   </div>
                 </FormControl>
@@ -213,7 +217,11 @@ export function BookingForm({
                       min="1" 
                       max="100"
                       className="pl-10"
-                      {...field} 
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
                     />
                   </div>
                 </FormControl>

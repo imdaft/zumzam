@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вход в систему - ZumZam</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f5;">
+    <tr>
+      <td style="padding: 40px 20px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; margin: 0 auto;">
+          
+          <!-- Header with Logo -->
+          <tr>
+            <td style="text-align: center; padding-bottom: 30px;">
+              <div style="display: inline-block; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 16px 24px; border-radius: 16px;">
+                <span style="font-size: 28px; color: white;">🎈</span>
+                <span style="font-size: 20px; font-weight: 700; color: white; margin-left: 8px; vertical-align: middle;">ZumZam</span>
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Main Content Card -->
+          <tr>
+            <td>
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #ffffff; border-radius: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
+                
+                <!-- Welcome Section -->
+                <tr>
+                  <td style="padding: 48px 40px 24px 40px; text-align: center;">
+                    <div style="width: 72px; height: 72px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border-radius: 50%; margin: 0 auto 24px auto;">
+                      <span style="font-size: 32px; line-height: 72px;">🔐</span>
+                    </div>
+                    <h1 style="margin: 0 0 16px 0; font-size: 28px; font-weight: 700; color: #18181b; line-height: 1.3;">
+                      Вход в систему
+                    </h1>
+                    <p style="margin: 0; font-size: 16px; color: #71717a; line-height: 1.6;">
+                      Кто-то запросил вход в аккаунт <strong style="color: #18181b;">ZumZam</strong>.<br>
+                      Нажмите кнопку ниже, чтобы войти.
+                    </p>
+                  </td>
+                </tr>
+                
+                <!-- Button Section -->
+                <tr>
+                  <td style="padding: 16px 40px 32px 40px; text-align: center;">
+                    <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=magiclink" 
+                       style="display: inline-block; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; padding: 16px 48px; border-radius: 12px; box-shadow: 0 4px 14px 0 rgba(249, 115, 22, 0.4);">
+                      Войти в аккаунт
+                    </a>
+                  </td>
+                </tr>
+                
+                <!-- Divider -->
+                <tr>
+                  <td style="padding: 0 40px;">
+                    <div style="border-top: 1px solid #e4e4e7;"></div>
+                  </td>
+                </tr>
+                
+                <!-- Security Note -->
+                <tr>
+                  <td style="padding: 32px 40px;">
+                    <div style="background-color: #fef3c7; border-radius: 12px; padding: 16px;">
+                      <p style="margin: 0; font-size: 13px; color: #92400e; line-height: 1.5;">
+                        ⚠️ <strong>Важно:</strong> Если вы не запрашивали вход, просто проигнорируйте это письмо. Ссылка действительна 1 час и может быть использована только один раз.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+                
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 32px 20px; text-align: center;">
+              <p style="margin: 0 0 8px 0; font-size: 14px; color: #71717a;">
+                С любовью, команда <strong>ZumZam</strong> 🎈
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #a1a1aa;">
+                © 2025 ZumZam. Все права защищены.
+              </p>
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

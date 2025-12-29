@@ -1,0 +1,6 @@
+tree d37a864590fa0345ae139ea3d038f446967003f6
+parent 09f8f38eff41f47ca73883f0b0812c2b96bb7046
+author imdaft <vanekseleznev@gmail.com> 1763512870 +0300
+committer imdaft <vanekseleznev@gmail.com> 1763512870 +0300
+
+feat: complete Day 1 - Next.js setup with AI, Supabase clients, and UI structure

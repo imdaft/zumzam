@@ -49,24 +49,24 @@ export function ServiceCard({ service }: ServiceCardProps) {
   const coverPhoto = service.photos?.[0] || '/placeholder-service.jpg'
 
   return (
-    <Card className="group overflow-hidden transition-shadow hover:shadow-lg">
+    <Card className="group overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
       {/* Фото */}
-      <div className="relative aspect-video overflow-hidden bg-slate-100 dark:bg-slate-800">
+      <div className="relative aspect-video overflow-hidden bg-gray-100">
         <img
           src={coverPhoto}
           alt={service.title}
           className="h-full w-full object-cover transition-transform group-hover:scale-110"
         />
         {service.profiles?.verified && (
-          <div className="absolute right-2 top-2 rounded-full bg-blue-600 px-2 py-1 text-xs font-medium text-white">
-            ✓ Проверено
+          <div className="absolute right-2 top-2 rounded-full bg-green-600 px-2.5 py-1 text-[11px] font-semibold text-white">
+            Проверено
           </div>
         )}
       </div>
 
       <CardHeader className="pb-3">
         {/* Название */}
-        <h3 className="line-clamp-2 text-lg font-bold group-hover:text-primary transition-colors">
+        <h3 className="line-clamp-2 text-lg font-bold text-gray-900 group-hover:text-orange-600 transition-colors">
           <Link href={`/services/${service.id}`}>
             {service.title}
           </Link>
@@ -76,7 +76,7 @@ export function ServiceCard({ service }: ServiceCardProps) {
         {service.profiles && (
           <Link
             href={`/profiles/${service.profiles.slug}`}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
           >
             {service.profiles.display_name}
           </Link>
@@ -85,12 +85,12 @@ export function ServiceCard({ service }: ServiceCardProps) {
 
       <CardContent className="space-y-3">
         {/* Описание */}
-        <p className="line-clamp-2 text-sm text-muted-foreground">
+        <p className="line-clamp-2 text-sm text-gray-600">
           {service.description}
         </p>
 
         {/* Детали */}
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
           {service.profiles?.city && (
             <div className="flex items-center gap-1">
               <MapPin className="h-3 w-3" />
@@ -125,12 +125,12 @@ export function ServiceCard({ service }: ServiceCardProps) {
         {service.tags && service.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {service.tags.slice(0, 2).map((tag) => (
-              <Badge key={tag} variant="secondary" className="text-xs">
+              <Badge key={tag} className="text-xs rounded-full bg-gray-100 text-gray-700 px-2">
                 {tag}
               </Badge>
             ))}
             {service.tags.length > 2 && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge className="text-xs rounded-full bg-gray-100 text-gray-700 px-2">
                 +{service.tags.length - 2}
               </Badge>
             )}
@@ -138,14 +138,14 @@ export function ServiceCard({ service }: ServiceCardProps) {
         )}
       </CardContent>
 
-      <CardFooter className="flex items-center justify-between border-t pt-4">
+      <CardFooter className="flex items-center justify-between border-t border-gray-100 pt-4">
         {/* Цена */}
         <div>
-          <p className="text-xl font-bold">{formatPrice()}</p>
+          <p className="text-xl font-bold text-gray-900">{formatPrice()}</p>
         </div>
 
         {/* Кнопка */}
-        <Button size="sm" asChild>
+        <Button size="sm" variant="outline" className="rounded-full" asChild>
           <Link href={`/services/${service.id}`}>
             Подробнее
           </Link>

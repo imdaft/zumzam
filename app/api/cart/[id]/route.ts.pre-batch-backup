@@ -1,0 +1,169 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+/**
+ * API для управления отдельными элементами корзины
+ * PATCH /api/cart/[id] - обновить элемент корзины (quantity, notes)
+ * DELETE /api/cart/[id] - удалить элемент из корзины
+ */
+
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { NextResponse } from 'next/server'
+
+interface RouteParams {
+  params: Promise<{ id: string }>
+}
+
+/**
+ * PATCH /api/cart/[id] - Обновить элемент корзины
+ */
+export async function PATCH(request: Request, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { quantity, notes } = body
+
+    // Валидация
+    if (quantity !== undefined && quantity < 1) {
+      return NextResponse.json(
+        { error: 'Quantity must be at least 1' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем, что элемент принадлежит пользователю
+    const { data: existingItem, error: checkError } = await supabase
+      .from('cart_items')
+      .select('id, user_id')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single()
+
+    if (checkError || !existingItem) {
+      return NextResponse.json(
+        { error: 'Cart item not found' },
+        { status: 404 }
+      )
+    }
+
+    // Обновляем элемент
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    }
+    
+    if (quantity !== undefined) {
+      updateData.quantity = quantity
+    }
+    
+    if (notes !== undefined) {
+      updateData.notes = notes
+    }
+
+    const { data: updatedItem, error: updateError } = await supabase
+      .from('cart_items')
+      .update(updateData)
+      .eq('id', id)
+      .select(`
+        *,
+        service:services (
+          id,
+          title,
+          description,
+          price,
+          service_type,
+          is_package,
+          images,
+          profile_id
+        ),
+        profile:profiles (
+          id,
+          display_name,
+          slug,
+          city
+        )
+      `)
+      .single()
+
+    if (updateError) {
+      console.error('[Cart Item API] Ошибка обновления:', updateError)
+      throw updateError
+    }
+
+    return NextResponse.json({
+      item: updatedItem,
+      message: 'Cart item updated successfully',
+    })
+  } catch (error: any) {
+    console.error('[Cart Item API] PATCH error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to update cart item' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/cart/[id] - Удалить элемент из корзины
+ */
+export async function DELETE(request: Request, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    
+    // Проверка авторизации
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    // Auth check done above, { status: 401 })
+    }
+
+    // Проверяем, что элемент принадлежит пользователю, и удаляем
+    const { error } = await supabase
+      .from('cart_items')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('[Cart Item API] Ошибка удаления:', error)
+      throw error
+    }
+
+    return NextResponse.json({
+      message: 'Item removed from cart successfully',
+    })
+  } catch (error: any) {
+    console.error('[Cart Item API] DELETE error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to remove item from cart' },
+      { status: 500 }
+    )
+  }
+}
+

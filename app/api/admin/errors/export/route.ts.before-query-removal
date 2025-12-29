@@ -1,0 +1,168 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+/**
+ * API для экспорта ошибок (только для админов)
+ * GET /api/admin/errors/export?format=json|csv
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем, что пользователь - админ
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      )
+    }
+
+    const searchParams = request.nextUrl.searchParams
+    const format = searchParams.get('format') || 'json'
+    const errorType = searchParams.get('errorType')
+    const isCritical = searchParams.get('isCritical')
+    const isResolved = searchParams.get('isResolved')
+    const timeRange = searchParams.get('timeRange') || 'all'
+
+    // Строим запрос
+    let query = supabase
+      .from('errors')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000) // Ограничиваем экспорт 1000 записями
+
+    // Применяем фильтр по времени
+    if (timeRange !== 'all') {
+      const now = new Date()
+      let since = new Date()
+      
+      switch (timeRange) {
+        case '1h':
+          since.setHours(now.getHours() - 1)
+          break
+        case '24h':
+          since.setHours(now.getHours() - 24)
+          break
+        case '7d':
+          since.setDate(now.getDate() - 7)
+          break
+        case '30d':
+          since.setDate(now.getDate() - 30)
+          break
+      }
+      
+      query = query.gte('created_at', since.toISOString())
+    }
+
+    // Применяем фильтры
+    if (errorType) {
+      query = query.eq('error_type', errorType)
+    }
+    if (isCritical !== null) {
+      query = query.eq('is_critical', isCritical === 'true')
+    }
+    if (isResolved !== null) {
+      query = query.eq('is_resolved', isResolved === 'true')
+    }
+
+    const { data: errors, error } = await query
+
+    if (error) {
+      logger.error('[Admin Errors Export] Query error', error)
+      return NextResponse.json(
+        { error: 'Failed to export errors' },
+        { status: 500 }
+      )
+    }
+
+    if (format === 'csv') {
+      // Экспорт в CSV
+      const csvHeaders = [
+        'ID',
+        'Время',
+        'Сообщение',
+        'Тип',
+        'URL',
+        'Пользователь',
+        'Критическая',
+        'Решена',
+      ]
+
+      const csvRows = errors?.map(error => [
+        error.id,
+        new Date(error.created_at).toISOString(),
+        `"${error.message.replace(/"/g, '""')}"`, // Экранируем кавычки
+        error.error_type,
+        error.url,
+        error.user_email || 'анонимный',
+        error.is_critical ? 'Да' : 'Нет',
+        error.is_resolved ? 'Да' : 'Нет',
+      ]) || []
+
+      const csv = [
+        csvHeaders.join(','),
+        ...csvRows.map(row => row.join(','))
+      ].join('\n')
+
+      return new Response(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="errors-${Date.now()}.csv"`,
+        },
+      })
+    } else {
+      // Экспорт в JSON
+      return new Response(JSON.stringify(errors, null, 2), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Disposition': `attachment; filename="errors-${Date.now()}.json"`,
+        },
+      })
+    }
+  } catch (error) {
+    logger.error('[Admin Errors Export] Exception', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

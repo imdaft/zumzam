@@ -1,0 +1,126 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Supabase client removed
+    const { id } = await params
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Проверяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+
+    const { data: style } = await supabase
+      .from('photography_styles')
+      .select('profile_id, profiles!inner(user_id)')
+      .eq('id', id)
+      .single()
+
+    if (!style) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // @ts-ignore
+    if (!isAdmin && style.profiles.user_id !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    
+    // Для админов используем admin client (обходит RLS)
+    const clientForUpdate = isAdmin ? createAdminClient() : supabase
+    
+    const { data, error } = await clientForUpdate
+      .from('photography_styles')
+      .update({ ...body, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) return NextResponse.json({ error: 'Failed to update' }, { status: 500 })
+    return NextResponse.json(data)
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Supabase client removed
+    const { id } = await params
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Проверяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+
+    const { data: style } = await supabase
+      .from('photography_styles')
+      .select('profile_id, profiles!inner(user_id)')
+      .eq('id', id)
+      .single()
+
+    if (!style) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // @ts-ignore
+    if (!isAdmin && style.profiles.user_id !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Для админов используем admin client (обходит RLS)
+    const clientForDelete = isAdmin ? createAdminClient() : supabase
+
+    const { error } = await clientForDelete.from('photography_styles').delete().eq('id', id)
+    if (error) return NextResponse.json({ error: 'Failed to delete' }, { status: 500 })
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+
+
+
+

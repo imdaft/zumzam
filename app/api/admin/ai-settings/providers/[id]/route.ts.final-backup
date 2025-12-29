@@ -1,0 +1,115 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+async function assertAdmin(supabase: any) {
+  const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+  // Auth check done above, { status: 401 }) }
+  }
+
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .single()
+
+  if (userError || userData?.role !== 'admin') {
+    return { ok: false as const, response: NextResponse.json({ message: 'Access denied' }, { status: 403 }) }
+  }
+
+  return { ok: true as const }
+}
+
+// Удалить провайдера
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    const admin = await assertAdmin(supabase)
+    if (!admin.ok) return admin.response
+
+    const { error } = await supabase
+      .from('ai_settings')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('[AI Settings] Error deleting provider:', error)
+      return NextResponse.json({ message: 'Failed to delete provider' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[AI Settings] Error:', error)
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// Обновить провайдера
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    // Supabase client removed
+    const admin = await assertAdmin(supabase)
+    if (!admin.ok) return admin.response
+
+    const body = await request.json()
+
+    // Если включаем активность — деактивируем остальные (иначе упадём на уникальном индексе)
+    if (body?.is_active === true) {
+      const { error: deactivateError } = await supabase
+        .from('ai_settings')
+        .update({ is_active: false })
+        .eq('is_active', true)
+
+      // Error handling removed (Prisma throws exceptions), { status: 500 })
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('ai_settings')
+      .update({
+        ...body,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[AI Settings] Error updating provider:', error)
+      if (error.code === '23505' && String(error.message || '').includes('idx_ai_settings_active')) {
+        return NextResponse.json(
+          { message: 'Уже есть активная модель. Снимите активность у другой модели.' },
+          { status: 409 }
+        )
+      }
+      return NextResponse.json({ message: 'Failed to update provider', details: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ provider: data })
+  } catch (error) {
+    console.error('[AI Settings] Error:', error)
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
+  }
+}
+

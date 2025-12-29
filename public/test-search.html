@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест векторного поиска</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: rgba(255, 255, 255, 0.9);
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .search-box {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+
+        input {
+            width: 100%;
+            padding: 15px 20px;
+            font-size: 1.1em;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            outline: none;
+            transition: border 0.3s;
+        }
+
+        input:focus {
+            border-color: #667eea;
+        }
+
+        .quick-searches {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        .quick-search-btn {
+            padding: 8px 15px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+
+        .quick-search-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        #results {
+            display: grid;
+            gap: 15px;
+        }
+
+        .service-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .service-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        }
+
+        .similarity-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
+        .service-title {
+            color: #333;
+            font-size: 1.3em;
+            margin-bottom: 10px;
+            padding-right: 80px;
+        }
+
+        .service-description {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+
+        .service-meta {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            font-size: 0.9em;
+            color: #888;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        .tag {
+            background: #f0f0f0;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.2em;
+            padding: 40px;
+        }
+
+        .error {
+            background: #ff5252;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stats {
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Тест векторного поиска</h1>
+        <div class="subtitle">Проверьте, как AI понимает смысл запросов</div>
+
+        <div class="search-box">
+            <input 
+                type="text" 
+                id="searchInput" 
+                placeholder="Например: праздник с супергероями для мальчика 7 лет"
+                autofocus
+            >
+            <div class="quick-searches">
+                <button class="quick-search-btn" onclick="search('праздник с супергероями')">🦸 Супергерои</button>
+                <button class="quick-search-btn" onclick="search('принцессы для девочки')">👸 Принцессы</button>
+                <button class="quick-search-btn" onclick="search('космическая вечеринка')">🚀 Космос</button>
+                <button class="quick-search-btn" onclick="search('научное шоу с опытами')">🧪 Наука</button>
+                <button class="quick-search-btn" onclick="search('квест для детей')">🗝️ Квест</button>
+                <button class="quick-search-btn" onclick="search('мыльные пузыри')">💭 Пузыри</button>
+            </div>
+        </div>
+
+        <div class="stats" id="stats"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const resultsDiv = document.getElementById('results');
+        const statsDiv = document.getElementById('stats');
+
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                search(searchInput.value);
+            }
+        });
+
+        async function search(query) {
+            if (!query.trim()) return;
+
+            searchInput.value = query;
+            resultsDiv.innerHTML = '<div class="loading">🔍 Ищу...</div>';
+            statsDiv.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/search/semantic', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        limit: 10,
+                        threshold: 0.5
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Ошибка поиска');
+                }
+
+                if (!data.services || data.services.length === 0) {
+                    resultsDiv.innerHTML = '<div class="loading">😕 Ничего не найдено</div>';
+                    return;
+                }
+
+                statsDiv.innerHTML = `Найдено ${data.services.length} ${plural(data.services.length, 'услуга', 'услуги', 'услуг')}`;
+
+                resultsDiv.innerHTML = data.services.map((service, index) => `
+                    <div class="service-card">
+                        <div class="similarity-badge">${(service.similarity * 100).toFixed(0)}%</div>
+                        <div class="service-title">${service.title}</div>
+                        <div class="service-description">${truncate(service.description, 150)}</div>
+                        <div class="service-meta">
+                            <div class="meta-item">💰 ${service.price || service.price_from || 0}₽</div>
+                            <div class="meta-item">👶 ${service.age_from}-${service.age_to} лет</div>
+                            ${service.duration ? `<div class="meta-item">⏱️ ${service.duration} мин</div>` : ''}
+                        </div>
+                        ${service.tags && service.tags.length > 0 ? `
+                            <div class="tags">
+                                ${service.tags.slice(0, 5).map(tag => `<span class="tag">${tag}</span>`).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">❌ ${error.message}</div>`;
+            }
+        }
+
+        function truncate(str, length) {
+            if (!str) return '';
+            return str.length > length ? str.substring(0, length) + '...' : str;
+        }
+
+        function plural(n, form1, form2, form5) {
+            n = Math.abs(n) % 100;
+            const n1 = n % 10;
+            if (n > 10 && n < 20) return form5;
+            if (n1 > 1 && n1 < 5) return form2;
+            if (n1 === 1) return form1;
+            return form5;
+        }
+
+        // Показываем начальную статистику
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/api/search/semantic', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: 'аниматор',
+                        limit: 1,
+                        threshold: 0
+                    })
+                });
+                const data = await response.json();
+                if (data.services) {
+                    statsDiv.innerHTML = `В базе ${data.total || 0}+ услуг с AI-поиском`;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        });
+    </script>
+</body>
+</html>
+

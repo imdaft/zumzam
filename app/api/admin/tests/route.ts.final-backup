@@ -1,0 +1,148 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+/**
+ * API для запуска тестов из админки
+ * 
+ * GET /api/admin/tests - получить список тестов
+ * POST /api/admin/tests - запустить тесты
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
+
+// Проверка что пользователь - админ
+async function checkAdmin() {
+  // Supabase client removed
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) return false
+  
+  const { data: userData } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .single()
+  
+  return userData?.role === 'admin'
+}
+
+// Список доступных тестов
+const TEST_SUITES = [
+  {
+    id: 'user',
+    name: 'API User',
+    description: 'Тесты авторизации и получения данных пользователя',
+    file: '__tests__/api/user.test.ts',
+  },
+  {
+    id: 'profiles',
+    name: 'API Profiles',
+    description: 'Тесты создания и получения профилей',
+    file: '__tests__/api/profiles.test.ts',
+  },
+  {
+    id: 'orders',
+    name: 'API Orders',
+    description: 'Тесты создания и управления заказами',
+    file: '__tests__/api/orders.test.ts',
+  },
+  {
+    id: 'search',
+    name: 'API Search',
+    description: 'Тесты семантического поиска',
+    file: '__tests__/api/search.test.ts',
+  },
+]
+
+export async function GET() {
+  // Список тестов доступен всем (для просмотра)
+  // Запуск - только для админов
+  const isAdmin = await checkAdmin()
+
+  return NextResponse.json({
+    suites: TEST_SUITES,
+    lastRun: null,
+    canRun: isAdmin,
+  })
+}
+
+export async function POST(request: NextRequest) {
+  const isAdmin = await checkAdmin()
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const body = await request.json()
+    const { suiteId } = body
+
+    // Находим тест
+    const suite = suiteId 
+      ? TEST_SUITES.find(s => s.id === suiteId)
+      : null
+
+    // Формируем команду
+    const testFile = suite ? suite.file : ''
+    const command = `npx vitest run ${testFile} --reporter=json`
+
+    // Запускаем тесты
+    const startTime = Date.now()
+    
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: process.cwd(),
+        timeout: 60000, // 60 секунд таймаут
+      })
+
+      const duration = Date.now() - startTime
+
+      // Парсим результат
+      let results
+      try {
+        results = JSON.parse(stdout)
+      } catch {
+        results = { raw: stdout, error: stderr }
+      }
+
+      return NextResponse.json({
+        success: true,
+        duration,
+        results,
+        suite: suite?.name || 'Все тесты',
+      })
+    } catch (execError: any) {
+      // Vitest возвращает exit code 1 при падении тестов
+      const duration = Date.now() - startTime
+      
+      let results
+      try {
+        results = JSON.parse(execError.stdout || '{}')
+      } catch {
+        results = { 
+          error: execError.message,
+          stdout: execError.stdout,
+          stderr: execError.stderr,
+        }
+      }
+
+      return NextResponse.json({
+        success: false,
+        duration,
+        results,
+        suite: suite?.name || 'Все тесты',
+      })
+    }
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || 'Failed to run tests' },
+      { status: 500 }
+    )
+  }
+}
+

@@ -1,0 +1,381 @@
+import { createClient } from '@/lib/supabase/server'
+import { generateEmbedding } from '@/lib/ai/embeddings'
+import { NextResponse } from 'next/server'
+import type { Database } from '@/types/supabase'
+
+type Profile = Database['public']['Tables']['profiles']['Insert']
+
+/**
+ * GET /api/profiles - Получить профили
+ * - ?mine=true - получить профили текущего пользователя (требуется авторизация)
+ * - ?city=... - публичный поиск по городу
+ */
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const mine = searchParams.get('mine') === 'true'
+  const city = searchParams.get('city')
+  const verified = searchParams.get('verified')
+  const limit = parseInt(searchParams.get('limit') || '20')
+  const offset = parseInt(searchParams.get('offset') || '0')
+
+  try {
+    const supabase = await createClient()
+    
+    // Если запрашиваются "мои" профили
+    if (mine) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      const { data: profiles, error, count } = await supabase
+        .from('profiles')
+        .select(`
+          *,
+          profile_locations (*)
+        `, { count: 'exact' })
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      return NextResponse.json({
+        profiles: profiles || [],
+        total: count || 0,
+      })
+    }
+
+    // Иначе - публичный поиск
+    let query = supabase
+      .from('profiles')
+      .select('*, profile_locations(*)', { count: 'exact' })
+      .eq('is_published', true) // Показываем только опубликованные
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    // Фильтры
+    if (city) {
+      query = query.eq('city', city)
+    }
+    if (verified === 'true') {
+      query = query.eq('verified', true)
+    }
+
+    const { data, error, count } = await query
+
+    if (error) throw error
+
+    return NextResponse.json({
+      profiles: data,
+      total: count,
+      limit,
+      offset,
+    })
+  } catch (error: any) {
+    console.error('Get profiles error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch profiles' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST /api/profiles - Создать новый профиль
+ */
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+    
+    // Проверяем авторизацию
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Получаем данные из тела запроса
+    const body = await request.json()
+    const {
+      display_name,
+      slug,
+      bio,
+      description,
+      city,
+      address,
+      tags,
+      price_range,
+      email,
+      phone,
+      website,
+      social_links,
+      portfolio_url,
+      photos,
+      videos,
+      cover_photo,
+      logo, // Логотип
+      locations, // Массив локаций (адресов филиалов)
+      category,
+      secondary_categories, // Дополнительные категории
+      details,
+      main_photo,
+      faq, // FAQ
+      is_published, // Статус публикации
+    } = body
+
+    // Проверяем уникальность slug
+    const { data: existingSlug } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('slug', slug)
+      .single()
+
+    if (existingSlug) {
+      return NextResponse.json(
+        { error: 'Slug already taken' },
+        { status: 400 }
+      )
+    }
+
+    // Генерируем embedding для семантического поиска
+    const textForEmbedding = `${display_name}. ${bio || ''}. ${description}. Теги: ${tags?.join(', ') || ''}`
+    let embedding: string | null = null
+    
+    try {
+      const embeddingArray = await generateEmbedding(textForEmbedding)
+      if (embeddingArray) {
+        embedding = `[${embeddingArray.join(',')}]`
+      }
+    } catch (embeddingError) {
+      console.error('Embedding generation error:', embeddingError)
+    }
+
+    // Создаём профиль
+    // Обратите внимание: id не передаем, он генерируется базой. user_id берем из сессии.
+    const profileData: Profile = {
+      user_id: user.id,
+      slug,
+      display_name,
+      bio: bio || null,
+      description,
+      city,
+      address: address || null,
+      tags: tags || [],
+      price_range: price_range || null,
+      email: email || null,
+      phone: phone || null,
+      website: website || null,
+      social_links: social_links || {},
+      portfolio_url: portfolio_url || null,
+      photos: photos || [],
+      videos: videos || [],
+      cover_photo: cover_photo || null,
+      logo: logo || null, // Логотип
+      embedding: embedding,
+      rating: 0,
+      reviews_count: 0,
+      bookings_completed: 0,
+      verified: false,
+      category: category || 'venue',
+      secondary_categories: secondary_categories || [], // Дополнительные категории
+      details: details || {},
+      main_photo: main_photo || null,
+      is_published: is_published !== undefined ? is_published : true, // Используем переданное значение
+    }
+
+    const { data: profile, error: insertError } = await supabase
+      .from('profiles')
+      .insert(profileData)
+      .select()
+      .single()
+
+    if (insertError) throw insertError
+
+    const allowLocations = profileData.category === 'venue'
+
+    // Создаём локации (адреса филиалов) только для площадок
+    if (allowLocations && locations && Array.isArray(locations) && locations.length > 0) {
+      const locationsData = locations.map((loc: any, index: number) => {
+        // Преобразуем координаты в формат WKT для PostGIS
+        let geoLocation: string | null = null
+        if (loc.geo_location && Array.isArray(loc.geo_location) && loc.geo_location.length === 2) {
+          const [lat, lon] = loc.geo_location // [latitude, longitude] из формы
+          // WKT формат: POINT(longitude latitude)
+          geoLocation = `POINT(${lon} ${lat})`
+        } else if (loc.geo_location && typeof loc.geo_location === 'object' && loc.geo_location.coordinates) {
+          // Если уже в формате GeoJSON
+          const [lon, lat] = loc.geo_location.coordinates
+          geoLocation = `POINT(${lon} ${lat})`
+        }
+
+        return {
+          profile_id: profile.id, // Используем ID созданного профиля
+          city: loc.city || city, // Если город не указан в локации, используем основной город
+          address: loc.address || null,
+          geo_location: null, // Вставляем без гео, обновляем через RPC ниже
+          name: loc.name || null,
+          phone: loc.phone || null,
+          email: loc.email || null,
+          working_hours: loc.working_hours || null,
+          is_main: index === 0, // Первая локация - главная
+          active: loc.active !== undefined ? loc.active : true,
+          details: loc.details || {},
+          yandex_url: loc.yandex_url || null,
+          yandex_rating: loc.yandex_rating || null,
+          yandex_review_count: loc.yandex_review_count || 0,
+        }
+      })
+
+      const { data: insertedLocations, error: insertError } = await supabase
+        .from('profile_locations')
+        .insert(locationsData)
+        .select('id')
+
+      if (insertError) {
+        console.error('Error creating locations:', insertError)
+      } else if (insertedLocations && insertedLocations.length > 0) {
+        // Обновляем geo_location для каждой локации через RPC
+        for (let i = 0; i < insertedLocations.length; i++) {
+          const loc = locations[i] // Берем исходную локацию для координат
+          const insertedLocation = insertedLocations[i]
+          
+          // Вычисляем WKT заново, так как мы не сохранили его в locationsData для insert
+          let geoLocation: string | null = null
+          if (loc.geo_location && Array.isArray(loc.geo_location) && loc.geo_location.length === 2) {
+            const [lat, lon] = loc.geo_location
+            geoLocation = `POINT(${lon} ${lat})`
+          } else if (loc.geo_location && typeof loc.geo_location === 'object' && loc.geo_location.coordinates) {
+            const [lon, lat] = loc.geo_location.coordinates
+            geoLocation = `POINT(${lon} ${lat})`
+          }
+
+          if (geoLocation) {
+            const { error: geoError } = await supabase.rpc('update_location_geo', {
+              location_id: insertedLocation.id,
+              geo_wkt: geoLocation,
+            })
+            
+            if (geoError) {
+              console.error('Error updating geo_location for location:', insertedLocation.id, geoError)
+            }
+          }
+        }
+      }
+    } else if (allowLocations && (address || city)) {
+      // Обратная совместимость: если локаций нет, создаем одну дефолтную (только для площадок)
+      const { error: locationError } = await supabase
+        .from('profile_locations')
+        .insert({
+          profile_id: profile.id,
+          city: city,
+          address: address || null,
+          is_main: true,
+          active: true,
+        })
+
+      if (locationError) {
+        console.error('Error creating default location:', locationError)
+      }
+    }
+
+    // Создаём FAQ, если они переданы
+    if (faq && Array.isArray(faq) && faq.length > 0) {
+      const faqData = faq.map((item: any) => ({
+        profile_id: profile.id,
+        question: item.question,
+        answer: item.answer,
+        display_order: item.display_order || 0,
+      }))
+
+      const { error: faqError } = await supabase
+        .from('faq_items')
+        .insert(faqData)
+
+      if (faqError) {
+        console.error('Error creating FAQ items:', faqError)
+      }
+    }
+
+    return NextResponse.json(
+      { profile, message: 'Profile created successfully' },
+      { status: 201 }
+    )
+  } catch (error: any) {
+    console.error('Create profile error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to create profile' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/profiles?id=... - Обновить профиль
+ */
+export async function PATCH(request: Request) {
+  try {
+    const supabase = await createClient()
+    
+    // Проверяем авторизацию
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Получаем ID профиля из query параметров
+    const { searchParams } = new URL(request.url)
+    const profileId = searchParams.get('id')
+    
+    if (!profileId) {
+      return NextResponse.json({ error: 'Profile ID is required' }, { status: 400 })
+    }
+
+    // Проверяем права доступа
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from('profiles')
+      .select('id, user_id')
+      .eq('id', profileId)
+      .single()
+    
+    if (fetchError || !existingProfile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+    
+    if (existingProfile.user_id !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Получаем данные для обновления
+    const body = await request.json()
+    
+    // Обновляем профиль
+    const { data: updatedProfile, error: updateError } = await supabase
+      .from('profiles')
+      .update(body)
+      .eq('id', profileId)
+      .select()
+      .single()
+    
+    if (updateError) {
+      console.error('Profile update error:', updateError)
+      throw updateError
+    }
+
+    return NextResponse.json({
+      profile: updatedProfile,
+      message: 'Profile updated successfully'
+    })
+  } catch (error: any) {
+    console.error('Update profile error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to update profile' },
+      { status: 500 }
+    )
+  }
+}

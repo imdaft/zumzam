@@ -1,0 +1,120 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { getUserIdFromRequest } from '@/lib/auth/jwt'
+import { logger } from '@/lib/logger'
+
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Supabase client removed
+    const { id } = await params
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Проверяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+
+    const { data: program } = await supabase
+      .from('master_class_programs')
+      .select('profile_id, profiles!inner(user_id)')
+      .eq('id', id)
+      .single()
+
+    if (!program) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // @ts-ignore
+    if (!isAdmin && program.profiles.user_id !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    
+    // Для админов используем admin client (обходит RLS)
+    const clientForUpdate = isAdmin ? createAdminClient() : supabase
+    
+    const { data, error } = await clientForUpdate
+      .from('master_class_programs')
+      .update(body) // Removed updated_at field (doesn't exist in schema)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[MasterClassPrograms] Update error:', error)
+      return NextResponse.json({ error: 'Failed to update', details: error.message }, { status: 500 })
+    }
+    return NextResponse.json(data)
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Supabase client removed
+    const { id } = await params
+    const userId = await getUserIdFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Проверяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+
+    const { data: program } = await supabase
+      .from('master_class_programs')
+      .select('profile_id, profiles!inner(user_id)')
+      .eq('id', id)
+      .single()
+
+    if (!program) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // @ts-ignore
+    if (!isAdmin && program.profiles.user_id !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Для админов используем admin client (обходит RLS)
+    const clientForDelete = isAdmin ? createAdminClient() : supabase
+
+    const { error } = await clientForDelete.from('master_class_programs').delete().eq('id', id)
+    if (error) return NextResponse.json({ error: 'Failed to delete' }, { status: 500 })
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+
+
+
+

@@ -1,0 +1,298 @@
+═══════════════════════════════════════════════════════════════
+  🛡️ РУКОВОДСТВО: Защита API Routes
+═══════════════════════════════════════════════════════════════
+
+✅ ЧТО УЖЕ ЗАЩИЩЕНО:
+
+1. /api/search/semantic - Семантический поиск
+   ✓ Bot Detection
+   ✓ Rate Limiting (30 запросов/минута)
+
+2. Форма регистрации (/register)
+   ✓ Honeypot field
+
+3. next.config.ts
+   ✓ CORS настроен
+   ✓ Security Headers добавлены
+
+═══════════════════════════════════════════════════════════════
+  📋 КАК ЗАЩИТИТЬ ОСТАЛЬНЫЕ API ROUTES
+═══════════════════════════════════════════════════════════════
+
+ШАБЛОН ДЛЯ ЛЮБОГО API ROUTE:
+
+// app/api/[ваш-route]/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { withApiProtection } from '@/lib/security/api-protection'
+
+export async function GET(request: NextRequest) {
+  // Добавить в начало функции
+  const protection = await withApiProtection(request)
+  if (protection) return protection
+
+  // Ваш код API...
+  const data = await fetchData()
+  return NextResponse.json(data)
+}
+
+export async function POST(request: NextRequest) {
+  // Для POST/PUT/DELETE тоже добавить
+  const protection = await withApiProtection(request, {
+    rateLimit: true,
+    botDetection: true,
+  })
+  if (protection) return protection
+
+  // Ваш код...
+}
+
+─────────────────────────────────────────────────────────────
+
+ПРИОРИТЕТНЫЕ API ДЛЯ ЗАЩИТЫ:
+
+ВЫСОКИЙ ПРИОРИТЕТ (защитить первыми):
+□ /api/search/* - любые поисковые API
+□ /api/profiles - список профилей
+□ /api/services - список услуг
+□ /api/bookings - создание бронирований
+□ /api/reviews - создание отзывов
+□ /api/upload - загрузка файлов
+
+СРЕДНИЙ ПРИОРИТЕТ:
+□ /api/favorites/* - избранное
+□ /api/cart/* - корзина
+□ /api/orders/* - заказы
+□ /api/ai/* - AI генерация
+
+НИЗКИЙ ПРИОРИТЕТ (админка - уже требует авторизацию):
+□ /api/admin/* - админские API
+
+═══════════════════════════════════════════════════════════════
+  🎯 КАСТОМНАЯ НАСТРОЙКА ДЛЯ РАЗНЫХ ENDPOINT
+═══════════════════════════════════════════════════════════════
+
+1. ПУБЛИЧНЫЕ API (чтение):
+
+export async function GET(request: NextRequest) {
+  const protection = await withApiProtection(request, {
+    rateLimit: true,      // Включить rate limit
+    botDetection: true,   // Включить bot detection
+    requireAuth: false,   // Не требовать авторизацию
+  })
+  if (protection) return protection
+  
+  // ...
+}
+
+─────────────────────────────────────────────────────────────
+
+2. СОЗДАНИЕ/ИЗМЕНЕНИЕ (write operations):
+
+export async function POST(request: NextRequest) {
+  const protection = await withApiProtection(request, {
+    rateLimit: true,
+    botDetection: true,
+    requireAuth: true,    // ТРЕБОВАТЬ авторизацию
+  })
+  if (protection) return protection
+  
+  // Дополнительно: проверить honeypot если это форма
+  const body = await request.json()
+  if (body._honeypot && body._honeypot !== '') {
+    return NextResponse.json({ error: 'Bot detected' }, { status: 403 })
+  }
+  
+  // ...
+}
+
+─────────────────────────────────────────────────────────────
+
+3. СТРОГИЕ ОГРАНИЧЕНИЯ (создание ресурсов):
+
+import { checkRateLimit, getClientIdentifier, RATE_LIMITS } from '@/lib/security/rate-limit'
+
+export async function POST(request: NextRequest) {
+  // Базовая защита
+  const protection = await withApiProtection(request, {
+    botDetection: true,
+    requireAuth: true,
+  })
+  if (protection) return protection
+
+  // Кастомный rate limit (строже)
+  const identifier = getClientIdentifier(request)
+  const rateLimitResult = checkRateLimit(identifier, RATE_LIMITS.create)
+  
+  if (!rateLimitResult.allowed) {
+    return NextResponse.json(
+      { error: 'Слишком много запросов. Попробуйте позже.' },
+      { status: 429 }
+    )
+  }
+
+  // ...
+}
+
+═══════════════════════════════════════════════════════════════
+  📝 ПРИМЕРЫ ЗАЩИТЫ КОНКРЕТНЫХ API
+═══════════════════════════════════════════════════════════════
+
+ПРИМЕР 1: /api/profiles/route.ts (список профилей)
+
+export async function GET(request: NextRequest) {
+  const protection = await withApiProtection(request)
+  if (protection) return protection
+
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('is_published', true)
+
+  return NextResponse.json({ profiles: data })
+}
+
+─────────────────────────────────────────────────────────────
+
+ПРИМЕР 2: /api/bookings/route.ts (создание бронирования)
+
+export async function POST(request: NextRequest) {
+  const protection = await withApiProtection(request, {
+    rateLimit: true,
+    botDetection: true,
+    requireAuth: true, // Только авторизованные
+  })
+  if (protection) return protection
+
+  const body = await request.json()
+  
+  // Проверка honeypot
+  if (body._honeypot) {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 403 })
+  }
+
+  // Создание бронирования...
+  const booking = await createBooking(body)
+  return NextResponse.json({ booking })
+}
+
+─────────────────────────────────────────────────────────────
+
+ПРИМЕР 3: /api/upload/route.ts (загрузка файлов)
+
+import { RATE_LIMITS } from '@/lib/security/rate-limit'
+
+export async function POST(request: NextRequest) {
+  // Строгий rate limit для загрузки
+  const protection = await withApiProtection(request, {
+    rateLimit: false, // Используем кастомный
+    botDetection: true,
+    requireAuth: true,
+  })
+  if (protection) return protection
+
+  // Кастомный rate limit: 10 файлов в час
+  const identifier = getClientIdentifier(request)
+  const rateLimitResult = checkRateLimit(identifier, RATE_LIMITS.create)
+  
+  if (!rateLimitResult.allowed) {
+    return NextResponse.json(
+      { error: 'Лимит загрузок превышен' },
+      { status: 429 }
+    )
+  }
+
+  // Загрузка файла...
+}
+
+═══════════════════════════════════════════════════════════════
+  ⚡ БЫСТРАЯ ИНТЕГРАЦИЯ (5-10 минут на все API)
+═══════════════════════════════════════════════════════════════
+
+ШАГИ:
+
+1. Открыть все API routes в app/api/
+2. Найти каждую функцию export async function GET/POST/...
+3. Добавить в начало:
+
+   import { withApiProtection } from '@/lib/security/api-protection'
+   
+   const protection = await withApiProtection(request)
+   if (protection) return protection
+
+4. Готово! 🎉
+
+АВТОМАТИЗАЦИЯ (VS Code):
+
+Найти: export async function (GET|POST|PUT|DELETE)\(request
+Заменить: 
+  import { withApiProtection } from '@/lib/security/api-protection'
+  
+  export async function $1(request: NextRequest) {
+    const protection = await withApiProtection(request)
+    if (protection) return protection
+    
+    // Original code...
+
+═══════════════════════════════════════════════════════════════
+  ✅ ПРОВЕРКА РАБОТЫ ЗАЩИТЫ
+═══════════════════════════════════════════════════════════════
+
+ТЕСТ 1: Rate Limiting
+
+1. Открыть DevTools Console
+2. Выполнить:
+
+   for(let i = 0; i < 35; i++) {
+     fetch('/api/search/semantic', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ query: 'test' })
+     })
+   }
+
+3. Ожидается: После 30 запросов - 429 Too Many Requests
+
+─────────────────────────────────────────────────────────────
+
+ТЕСТ 2: Bot Detection
+
+1. Выполнить запрос без User-Agent:
+
+   curl -X POST https://zumzam.ru/api/profiles \
+     -H "Content-Type: application/json"
+
+2. Ожидается: 403 Forbidden
+
+─────────────────────────────────────────────────────────────
+
+ТЕСТ 3: Honeypot
+
+1. Открыть форму регистрации
+2. В DevTools заполнить скрытое поле:
+   
+   document.querySelector('input[name="website"]').value = 'test'
+
+3. Отправить форму
+4. Ожидается: Ошибка "Подозрительная активность"
+
+═══════════════════════════════════════════════════════════════
+  🎯 СТАТУС ИНТЕГРАЦИИ
+═══════════════════════════════════════════════════════════════
+
+✅ ГОТОВО:
+- Утилиты безопасности созданы
+- Пример интеграции в search API
+- Honeypot в форме регистрации
+- CORS настроен
+- Security headers добавлены
+
+⚠️ ОСТАЛОСЬ (5-10 минут):
+- Добавить protection в остальные API routes
+- Добавить honeypot в форму бронирования
+- Протестировать работу защиты
+
+═══════════════════════════════════════════════════════════════
+
+Защита готова к использованию! 🛡️
+

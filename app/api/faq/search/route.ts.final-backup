@@ -1,0 +1,62 @@
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { generateEmbedding } from '@/lib/ai/embeddings'
+
+/**
+ * POST /api/faq/search
+ * Семантический поиск по FAQ с использованием векторных embeddings
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const { query, threshold = 0.3, limit = 10 } = await request.json()
+
+    if (!query || typeof query !== 'string') {
+      return NextResponse.json(
+        { error: 'Query is required' },
+        { status: 400 }
+      )
+    }
+
+    // Генерируем embedding для поискового запроса
+    const queryEmbedding = await generateEmbedding(query)
+
+    if (!queryEmbedding) {
+      return NextResponse.json(
+        { error: 'Failed to generate embedding for query' },
+        { status: 500 }
+      )
+    }
+
+    // Выполняем семантический поиск
+    // Supabase client removed
+    
+    const { data, error } = await supabase.rpc('match_faq_items', {
+      query_embedding: JSON.stringify(queryEmbedding),
+      match_threshold: threshold,
+      match_count: limit
+    })
+
+    if (error) {
+      console.error('[FAQ Search] Error:', error)
+      return NextResponse.json(
+        { error: 'Search failed' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      results: data || [],
+      query,
+      count: data?.length || 0
+    })
+
+  } catch (error) {
+    console.error('[FAQ Search] Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+

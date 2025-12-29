@@ -1,0 +1,283 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * API endpoint для транскрипции голосовых сообщений
+ * Поддерживает:
+ * - Whisper (локальный, через transformers.js)
+ * - Gemini 2.0 Flash (облачный)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    logger.info('[STT API] Request received')
+    
+    const formData = await request.formData()
+    const audioFile = formData.get('audio') as File
+
+    if (!audioFile) {
+      logger.error('[STT API] No audio file provided')
+      return NextResponse.json(
+        { error: 'Аудио файл обязателен' },
+        { status: 400 }
+      )
+    }
+
+    logger.info('[STT API] Audio file:', {
+      name: audioFile.name,
+      size: audioFile.size,
+      type: audioFile.type
+    })
+
+    // Получаем активную настройку STT
+    // Supabase client removed
+    const { data: activeSetting, error: settingError } = await supabase
+      .from('stt_settings')
+      .select('*')
+      .eq('is_active', true)
+      .single()
+
+    if (settingError || !activeSetting) {
+      logger.error('[STT API] No active STT setting found:', settingError)
+      // Fallback to Whisper
+      return transcribeWithWhisper(audioFile)
+    }
+
+    logger.info(`[STT API] Using provider: ${activeSetting.provider} (${activeSetting.name})`)
+
+    // Выбираем провайдер
+    if (activeSetting.provider === 'gemini') {
+      return transcribeWithGemini(audioFile, activeSetting.settings)
+    } else {
+      return transcribeWithWhisper(audioFile, activeSetting.settings)
+    }
+
+  } catch (error: any) {
+    logger.error('[STT API] Unexpected error:', error)
+    logger.error('[STT API] Stack:', error.stack)
+    return NextResponse.json(
+      { error: 'Неожиданная ошибка', details: error.message, stack: error.stack },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Транскрипция через Gemini 2.0 Flash
+ */
+async function transcribeWithGemini(audioFile: File, settings: any = {}) {
+  try {
+    logger.info('[Gemini STT] Starting transcription...')
+
+    // Читаем аудио как base64
+    const arrayBuffer = await audioFile.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    const base64Audio = buffer.toString('base64')
+
+    // Gemini API
+    const { GoogleGenerativeAI } = await import('@google/generative-ai')
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+    
+    const model = genAI.getGenerativeModel({ 
+      model: settings.model || 'gemini-2.0-flash-exp'
+    })
+
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          data: base64Audio,
+          mimeType: settings.mimeType || 'audio/webm'
+        }
+      },
+      {
+        text: 'Пожалуйста, транскрибируй эту аудиозапись на русском языке. Верни только текст без пояснений.'
+      }
+    ])
+
+    const response = await result.response
+    const text = response.text().trim()
+    
+    logger.info('[Gemini STT] Transcription successful:', text)
+
+    return NextResponse.json({
+      text,
+      language: 'ru',
+      provider: 'gemini'
+    })
+  } catch (error: any) {
+    logger.error('[Gemini STT] Error:', error)
+    return NextResponse.json(
+      { error: 'Ошибка Gemini STT', details: error.message },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Транскрипция через Whisper (локальный)
+ */
+async function transcribeWithWhisper(audioFile: File, settings: any = {}) {
+  try {
+    logger.info('[Whisper STT] Starting transcription...')
+    
+    // Динамический импорт transformers
+    logger.info('[Whisper STT] Loading transformers...')
+    let pipeline: any
+    try {
+      const { pipeline: pipelineFn } = await import('@xenova/transformers')
+      pipeline = pipelineFn
+      logger.info('[Whisper STT] Transformers loaded!')
+    } catch (importError: any) {
+      logger.error('[Whisper STT] Import error:', importError)
+      return NextResponse.json(
+        { error: 'Не удалось загрузить модуль транскрипции', details: importError.message },
+        { status: 500 }
+      )
+    }
+
+    // Инициализация модели
+    logger.info('[Whisper STT] Loading Whisper model...')
+    let transcriber: any
+    try {
+      transcriber = await pipeline(
+        'automatic-speech-recognition',
+        settings.model || 'Xenova/whisper-small'
+      )
+      logger.info('[Whisper STT] Model loaded successfully!')
+    } catch (modelError: any) {
+      logger.error('[Whisper STT] Model loading error:', modelError)
+      return NextResponse.json(
+        { error: 'Ошибка загрузки модели Whisper', details: modelError.message },
+        { status: 500 }
+      )
+    }
+
+    // Читаем аудио
+    logger.info('[Whisper STT] Reading audio buffer...')
+    const arrayBuffer = await audioFile.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    logger.info('[Whisper STT] Buffer ready, size:', buffer.length)
+
+    // Подготовка временных файлов
+    const fs = await import('fs')
+    const path = await import('path')
+    const os = await import('os')
+    const tempDir = os.tmpdir()
+    const tempFile = path.join(tempDir, `whisper-${Date.now()}.webm`)
+    const tempWav = tempFile.replace('.webm', '.wav')
+
+    // Сохраняем WebM во временный файл
+    logger.info('[Whisper STT] Saving to temp file:', tempFile)
+    fs.writeFileSync(tempFile, buffer)
+
+    // Декодируем в WAV (16kHz mono) через ffmpeg
+    logger.info('[Whisper STT] Converting to WAV via ffmpeg...')
+    const { default: ffmpegStatic } = await import('ffmpeg-static')
+    const ffmpegPath = ffmpegStatic || 'ffmpeg'
+    const { execFile } = await import('child_process')
+
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        ffmpegPath,
+        ['-y', '-i', tempFile, '-ac', '1', '-ar', '16000', '-f', 'wav', tempWav],
+        (err) => {
+          if (err) {
+            logger.error('[Whisper STT] ffmpeg error:', err)
+            return reject(err)
+          }
+          resolve()
+        }
+      )
+    })
+    logger.info('[Whisper STT] WAV ready:', tempWav)
+
+    // Парсим WAV и получаем Float32Array
+    const wavDecoder = await import('wav-decoder')
+    const wavBuffer = fs.readFileSync(tempWav)
+    const decoded = await wavDecoder.default.decode(wavBuffer)
+    const sampleRate = decoded.sampleRate || 16000
+    const channelData = decoded.channelData?.[0]
+
+    if (!channelData) {
+      logger.error('[Whisper STT] No channel data after decode')
+      fs.unlinkSync(tempFile)
+      fs.unlinkSync(tempWav)
+      return NextResponse.json(
+        { error: 'Не удалось декодировать аудио' },
+        { status: 400 }
+      )
+    }
+
+    const audioFloat32 =
+      channelData instanceof Float32Array ? channelData : Float32Array.from(channelData)
+    logger.info(
+      '[Whisper STT] Audio ready, sampleRate:',
+      sampleRate,
+      'length:',
+      audioFloat32.length
+    )
+
+    // Транскрипция
+    logger.info('[Whisper STT] Starting transcription...')
+    try {
+      // Передаем готовый PCM (Float32Array) напрямую
+      const result = await transcriber(audioFloat32, {
+        language: settings.language || 'ru',
+        task: 'transcribe',
+        return_timestamps: false,
+        sampling_rate: sampleRate,
+      })
+
+      const text = result.text.trim()
+      logger.info('[Whisper STT] Transcription successful:', text)
+      
+      // Удаляем временный файл
+      try {
+        fs.unlinkSync(tempFile)
+        fs.unlinkSync(tempWav)
+        logger.info('[Whisper STT] Temp file deleted')
+      } catch (e) {
+        console.warn('[Whisper STT] Could not delete temp file:', e)
+      }
+
+      return NextResponse.json({
+        text,
+        language: settings.language || 'ru',
+        duration: audioFloat32.length / sampleRate,
+        provider: 'whisper'
+      })
+    } catch (transcribeError: any) {
+      logger.error('[Whisper STT] Transcription error:', transcribeError)
+      
+      // Удаляем временный файл при ошибке
+      try {
+        fs.unlinkSync(tempFile)
+        fs.unlinkSync(tempWav)
+      } catch (e) {
+        // ignore
+      }
+      
+      return NextResponse.json(
+        { error: 'Ошибка при распознавании речи', details: transcribeError.message },
+        { status: 500 }
+      )
+    }
+  } catch (error: any) {
+    logger.error('[Whisper STT] Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Ошибка Whisper STT', details: error.message },
+      { status: 500 }
+    )
+  }
+}
+
+// Node.js runtime для работы с transformers
+export const runtime = 'nodejs'
+export const maxDuration = 60

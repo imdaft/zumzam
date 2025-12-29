@@ -1,0 +1,116 @@
+════════════════════════════════════════════════════════════════════════════
+  1. ANIMATOR_CHARACTERS
+════════════════════════════════════════════════════════════════════════════
+                        Table "public.animator_characters"
+   Column    |           Type           | Collation | Nullable |      Default      
+-------------+--------------------------+-----------+----------+-------------------
+ id          | uuid                     |           | not null | gen_random_uuid()
+ profile_id  | uuid                     |           |          | 
+ name        | text                     |           | not null | 
+ description | text                     |           |          | 
+ price_from  | numeric                  |           |          | 
+ price_to    | numeric                  |           |          | 
+ age_min     | integer                  |           |          | 
+ age_max     | integer                  |           |          | 
+ photo       | text                     |           |          | 
+ active      | boolean                  |           |          | true
+ created_at  | timestamp with time zone |           |          | now()
+Indexes:
+    "animator_characters_pkey" PRIMARY KEY, btree (id)
+Foreign-key constraints:
+    "animator_characters_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+
+
+════════════════════════════════════════════════════════════════════════════
+  2. SHOW_PROGRAMS
+════════════════════════════════════════════════════════════════════════════
+                              Table "public.show_programs"
+      Column      |           Type           | Collation | Nullable |      Default      
+------------------+--------------------------+-----------+----------+-------------------
+ id               | uuid                     |           | not null | gen_random_uuid()
+ profile_id       | uuid                     |           |          | 
+ name             | text                     |           | not null | 
+ description      | text                     |           |          | 
+ duration_minutes | integer                  |           |          | 
+ price            | numeric                  |           |          | 
+ age_min          | integer                  |           |          | 
+ age_max          | integer                  |           |          | 
+ photo            | text                     |           |          | 
+ active           | boolean                  |           |          | true
+ created_at       | timestamp with time zone |           |          | now()
+Indexes:
+    "show_programs_pkey" PRIMARY KEY, btree (id)
+Foreign-key constraints:
+    "show_programs_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+
+
+════════════════════════════════════════════════════════════════════════════
+  3. QUEST_PROGRAMS
+════════════════════════════════════════════════════════════════════════════
+                             Table "public.quest_programs"
+      Column      |           Type           | Collation | Nullable |      Default      
+------------------+--------------------------+-----------+----------+-------------------
+ id               | uuid                     |           | not null | gen_random_uuid()
+ profile_id       | uuid                     |           |          | 
+ name             | text                     |           | not null | 
+ description      | text                     |           |          | 
+ duration_minutes | integer                  |           |          | 
+ price            | numeric                  |           |          | 
+ min_players      | integer                  |           |          | 
+ max_players      | integer                  |           |          | 
+ difficulty       | text                     |           |          | 
+ photo            | text                     |           |          | 
+ active           | boolean                  |           |          | true
+ created_at       | timestamp with time zone |           |          | now()
+Indexes:
+    "quest_programs_pkey" PRIMARY KEY, btree (id)
+Foreign-key constraints:
+    "quest_programs_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+
+
+════════════════════════════════════════════════════════════════════════════
+  4. PHOTOGRAPHY_STYLES
+════════════════════════════════════════════════════════════════════════════
+                        Table "public.photography_styles"
+   Column   |           Type           | Collation | Nullable |      Default      
+------------+--------------------------+-----------+----------+-------------------
+ id         | uuid                     |           | not null | gen_random_uuid()
+ profile_id | uuid                     |           |          | 
+ style_id   | text                     |           |          | 
+ created_at | timestamp with time zone |           |          | now()
+Indexes:
+    "photography_styles_pkey" PRIMARY KEY, btree (id)
+Foreign-key constraints:
+    "photography_styles_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+
+
+════════════════════════════════════════════════════════════════════════════
+  5. MASTER_CLASS_PROGRAMS
+════════════════════════════════════════════════════════════════════════════
+                           Table "public.master_class_programs"
+       Column       |           Type           | Collation | Nullable |      Default      
+--------------------+--------------------------+-----------+----------+-------------------
+ id                 | uuid                     |           | not null | gen_random_uuid()
+ profile_id         | uuid                     |           |          | 
+ name               | text                     |           | not null | 
+ description        | text                     |           |          | 
+ duration_minutes   | integer                  |           |          | 
+ price              | numeric                  |           |          | 
+ age_min            | integer                  |           |          | 
+ age_max            | integer                  |           |          | 
+ photo              | text                     |           |          | 
+ active             | boolean                  |           |          | true
+ created_at         | timestamp with time zone |           |          | now()
+ min_participants   | integer                  |           |          | 
+ max_participants   | integer                  |           |          | 
+ materials_included | boolean                  |           |          | false
+ materials_list     | text[]                   |           |          | '{}'::text[]
+ take_home          | boolean                  |           |          | false
+ certificate        | boolean                  |           |          | false
+ categories         | text[]                   |           |          | '{}'::text[]
+ video_url          | text                     |           |          | 
+Indexes:
+    "master_class_programs_pkey" PRIMARY KEY, btree (id)
+Foreign-key constraints:
+    "master_class_programs_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+

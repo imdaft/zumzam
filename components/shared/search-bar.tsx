@@ -192,9 +192,9 @@ export function SearchBar({
 
   if (variant === 'compact') {
     return (
-      <div className="relative w-full max-w-sm">
+      <div className="relative w-full">
         <form onSubmit={handleSubmit}>
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground z-10" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 z-10" />
           <Input
             ref={inputRef}
             type="search"
@@ -203,21 +203,21 @@ export function SearchBar({
             onChange={(e) => setQuery(e.target.value)}
             onFocus={handleInputFocus}
             onKeyDown={handleKeyDown}
-            className="pl-9 pr-9"
+            className="h-12 rounded-full pl-9 pr-9 border-gray-200 bg-white shadow-sm focus-visible:ring-orange-100"
             autoFocus={autoFocus}
           />
           {query && !isSearching && (
             <button
               type="button"
               onClick={handleClear}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground z-10"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900 z-10"
             >
               <X className="h-4 w-4" />
             </button>
           )}
           {isSearching && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
             </div>
           )}
         </form>
@@ -226,18 +226,18 @@ export function SearchBar({
         {showDropdownContent && (
           <div
             ref={dropdownRef}
-            className="absolute top-full mt-2 w-full bg-white dark:bg-slate-800 rounded-lg border shadow-lg z-50 max-h-80 overflow-y-auto"
+            className="absolute top-full mt-2 w-full bg-white rounded-[24px] border border-gray-100 shadow-[0_10px_30px_-16px_rgba(0,0,0,0.25)] z-50 max-h-80 overflow-y-auto"
           >
             <div className="py-2">
               {query.length < 2 && (
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground flex items-center gap-2">
-                  <TrendingUp className="h-3 w-3" />
+                <div className="px-3 py-2 text-xs font-semibold text-gray-500 flex items-center gap-2">
+                  <TrendingUp className="h-3 w-3 text-gray-400" />
                   Популярные запросы
                 </div>
               )}
               {query.length >= 2 && (
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground flex items-center gap-2">
-                  <Sparkles className="h-3 w-3" />
+                <div className="px-3 py-2 text-xs font-semibold text-blue-700 flex items-center gap-2">
+                  <Sparkles className="h-3 w-3 text-blue-600" />
                   {isLoadingSuggestions ? 'Генерируем подсказки...' : 'AI подсказки'}
                 </div>
               )}
@@ -246,11 +246,11 @@ export function SearchBar({
                   key={index}
                   onClick={() => handleSuggestionClick(suggestion)}
                   className={cn(
-                    'w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors',
-                    highlightedIndex === index && 'bg-slate-100 dark:bg-slate-700'
+                    'w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors',
+                    highlightedIndex === index && 'bg-gray-50'
                   )}
                 >
-                  <Search className="inline h-3 w-3 mr-2 text-muted-foreground" />
+                  <Search className="inline h-3 w-3 mr-2 text-gray-400" />
                   {suggestion}
                 </button>
               ))}
@@ -264,8 +264,8 @@ export function SearchBar({
   return (
     <div className="relative w-full">
       <form onSubmit={handleSubmit}>
-        <div className="flex items-center gap-2 rounded-lg border bg-white p-2 shadow-lg dark:bg-slate-800">
-          <Search className="ml-2 h-5 w-5 text-muted-foreground" />
+        <div className="flex items-center gap-2 rounded-[24px] border border-gray-100 bg-white p-2 shadow-sm">
+          <Search className="ml-2 h-5 w-5 text-gray-400" />
           <Input
             ref={inputRef}
             type="search"
@@ -281,16 +281,16 @@ export function SearchBar({
             <button
               type="button"
               onClick={handleClear}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-gray-400 hover:text-gray-900"
             >
               <X className="h-5 w-5" />
             </button>
           )}
           {isSearching && (
-            <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
+            <Loader2 className="mr-2 h-5 w-5 animate-spin text-gray-400" />
           )}
           {!isSearching && (
-            <Button type="submit" size="sm" className="mr-1">
+            <Button type="submit" size="sm" className="mr-1 rounded-full bg-orange-500 hover:bg-orange-600">
               Найти
             </Button>
           )}
@@ -301,18 +301,18 @@ export function SearchBar({
       {showDropdownContent && (
         <div
           ref={dropdownRef}
-          className="absolute top-full mt-2 w-full bg-white dark:bg-slate-800 rounded-lg border shadow-xl z-50 max-h-96 overflow-y-auto"
+          className="absolute top-full mt-2 w-full bg-white rounded-[24px] border border-gray-100 shadow-[0_10px_30px_-16px_rgba(0,0,0,0.25)] z-50 max-h-96 overflow-y-auto"
         >
           <div className="py-2">
             {query.length < 2 && (
-              <div className="px-4 py-2 text-sm font-semibold text-muted-foreground flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
+              <div className="px-4 py-2 text-sm font-semibold text-gray-500 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-gray-400" />
                 Популярные запросы
               </div>
             )}
             {query.length >= 2 && (
-              <div className="px-4 py-2 text-sm font-semibold text-muted-foreground flex items-center gap-2">
-                <Sparkles className="h-4 w-4" />
+              <div className="px-4 py-2 text-sm font-semibold text-blue-700 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-blue-600" />
                 {isLoadingSuggestions ? 'Генерируем подсказки...' : 'AI подсказки'}
               </div>
             )}
@@ -321,11 +321,11 @@ export function SearchBar({
                 key={index}
                 onClick={() => handleSuggestionClick(suggestion)}
                 className={cn(
-                  'w-full px-4 py-3 text-left hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors',
-                  highlightedIndex === index && 'bg-slate-100 dark:bg-slate-700'
+                  'w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors',
+                  highlightedIndex === index && 'bg-gray-50'
                 )}
               >
-                <Search className="inline h-4 w-4 mr-2 text-muted-foreground" />
+                <Search className="inline h-4 w-4 mr-2 text-gray-400" />
                 {suggestion}
               </button>
             ))}

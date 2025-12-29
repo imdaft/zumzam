@@ -1,0 +1,123 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+/**
+ * POST /api/admin/profiles/create-unclaimed
+ * Создание профиля без владельца (только для админов)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Supabase client removed
+    
+    // Проверяем авторизацию и права админа
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    // Проверяем, что пользователь — админ
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (userError || !userData || userData.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Доступ запрещён' },
+        { status: 403 }
+      )
+    }
+
+    const body = await request.json()
+    const { display_name, slug, category, city, description } = body
+
+    // Валидация
+    if (!display_name || display_name.length < 2) {
+      return NextResponse.json(
+        { error: 'Укажите название профиля' },
+        { status: 400 }
+      )
+    }
+
+    if (!slug || slug.length < 2) {
+      return NextResponse.json(
+        { error: 'Укажите slug (URL)' },
+        { status: 400 }
+      )
+    }
+
+    // Проверяем уникальность slug
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('slug', slug)
+      .single()
+
+    if (existingProfile) {
+      return NextResponse.json(
+        { error: 'Профиль с таким slug уже существует' },
+        { status: 400 }
+      )
+    }
+
+    // Создаём профиль без владельца
+    const { data: newProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert({
+        display_name,
+        slug,
+        category: category || 'venue',
+        // Поле city в БД not-null, поэтому гарантируем непустую строку
+        city: city?.trim() || '—',
+        description: description || null,
+        bio: description || null,
+        user_id: null, // Без владельца!
+        claim_status: 'unclaimed',
+        // claim_token генерируется автоматически в БД (DEFAULT gen_random_uuid())
+        created_by: userId,
+        is_published: true,
+        verified: false,
+      })
+      .select('*, claim_token')
+      .single()
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      profile: newProfile,
+      message: 'Профиль создан! Теперь вы можете отправить ссылку владельцу.',
+    })
+  } catch (error) {
+    logger.error('Create unclaimed profile API error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

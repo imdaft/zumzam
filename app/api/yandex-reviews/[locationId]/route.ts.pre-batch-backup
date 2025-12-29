@@ -1,0 +1,68 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * GET /api/yandex-reviews/[locationId]
+ * Возвращает кешированные отзывы для location
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ locationId: string }> }
+) {
+  try {
+    const { locationId } = await params
+
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'Location ID is required' },
+        { status: 400 }
+      )
+    }
+
+    // Supabase client removed
+
+    // Получаем кеш отзывов
+    const { data: cache, error } = await supabase
+      .from('yandex_reviews_cache')
+      .select('*')
+      .eq('profile_location_id', locationId)
+      .single()
+
+    if (error) {
+      // Если кеша нет - это нормально, просто возвращаем пустой результат
+      if (error.code === 'PGRST116') {
+        return NextResponse.json({
+          reviews: [],
+          rating: null,
+          review_count: 0,
+          cached: false,
+        })
+      }
+      
+      throw error
+    }
+
+    return NextResponse.json({
+      reviews: cache.reviews || [],
+      rating: cache.rating,
+      review_count: cache.review_count || 0,
+      last_updated: cache.last_parsed_at,
+      cached: true,
+    })
+
+  } catch (error: any) {
+    console.error('[GET /api/yandex-reviews/[locationId]] Error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+

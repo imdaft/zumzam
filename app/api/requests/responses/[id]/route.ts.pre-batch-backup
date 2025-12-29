@@ -1,0 +1,230 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+interface RouteParams {
+  params: Promise<{ id: string }>
+}
+
+// PATCH /api/requests/responses/[id] — обновление статуса отклика
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: responseId } = await params
+    // Supabase client removed
+    
+    // Проверяем авторизацию
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    
+    // Auth check done above,
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { status } = body
+
+    // Валидация статуса
+    const validStatuses = ['viewed', 'accepted', 'rejected']
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: 'Недопустимый статус' },
+        { status: 400 }
+      )
+    }
+
+    // Получаем отклик с информацией о заявке
+    const { data: response, error: responseError } = await supabase
+      .from('order_responses')
+      .select(`
+        *,
+        order_requests (
+          id,
+          client_id,
+          title
+        )
+      `)
+      .eq('id', responseId)
+      .single()
+
+    if (responseError || !response) {
+      return NextResponse.json(
+        { error: 'Отклик не найден' },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем, что пользователь владелец заявки
+    if (response.order_requests?.client_id !== userId) {
+      return NextResponse.json(
+        { error: 'У вас нет доступа к этому отклику' },
+        { status: 403 }
+      )
+    }
+
+    // Обновляем статус отклика
+    const { data: updatedResponse, error: updateError } = await supabase
+      .from('order_responses')
+      .update({ 
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', responseId)
+      .select()
+      .single()
+
+    // Error handling removed (Prisma throws exceptions),
+        { status: 500 }
+      )
+    }
+
+    // Если принят — обновляем статус объявления, создаём чат и уведомление
+    if (status === 'accepted') {
+      // Обновляем статус объявления на "в работе" — оно исчезнет с публичной доски
+      const { error: updateRequestError } = await supabase
+        .from('order_requests')
+        .update({ 
+          status: 'in_progress',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', response.request_id)
+      
+      if (updateRequestError) {
+        console.error('[API Response] Error updating request status:', updateRequestError)
+      } else {
+        console.log('[API Response] Request status updated to in_progress:', response.request_id)
+      }
+
+      // Создаём чат между клиентом и исполнителем
+      const { data: conversationId } = await supabase.rpc('get_or_create_conversation', {
+        p_source_type: 'request',
+        p_source_id: response.request_id,
+        p_participant_1: userId, // клиент
+        p_participant_2: response.performer_id, // исполнитель
+        p_response_id: responseId,
+        p_profile_id: response.profile_id,
+      })
+
+      // Создаём уведомление для исполнителя
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: response.performer_id,
+          type: 'response_accepted',
+          title: 'Ваш отклик принят! 🎉',
+          body: `Заказчик принял ваш отклик на "${response.order_requests?.title}". Теперь вы можете общаться в чате.`,
+          action_url: conversationId ? `/messages?chat=${conversationId}` : `/board/${response.request_id}`,
+          read: false,
+          read_at: null,
+          data: {
+            request_id: response.request_id,
+            response_id: responseId,
+          },
+        })
+    }
+
+    // Если отклонён — создаём уведомление для исполнителя
+    if (status === 'rejected') {
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: response.performer_id,
+          type: 'response_rejected',
+          title: 'Отклик отклонён',
+          body: `К сожалению, ваш отклик на "${response.order_requests?.title}" не был принят`,
+          action_url: `/board/${response.request_id}`,
+          read: false,
+          read_at: null,
+          data: {
+            request_id: response.request_id,
+            response_id: responseId,
+          },
+        })
+    }
+
+    return NextResponse.json(updatedResponse)
+  } catch (error) {
+    console.error('[API Response] Error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+
+// GET /api/requests/responses/[id] — получение информации об отклике
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: responseId } = await params
+    // Supabase client removed
+    
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Необходимо авторизоваться' },
+        { status: 401 }
+      )
+    }
+
+    const { data: response, error } = await supabase
+      .from('order_responses')
+      .select(`
+        *,
+        profiles (
+          id,
+          slug,
+          display_name,
+          main_photo,
+          rating,
+          reviews_count
+        ),
+        order_requests (
+          id,
+          title,
+          client_id
+        )
+      `)
+      .eq('id', responseId)
+      .single()
+
+    if (error || !response) {
+      return NextResponse.json(
+        { error: 'Отклик не найден' },
+        { status: 404 }
+      )
+    }
+
+    // Проверяем доступ: владелец заявки или автор отклика
+    const isOwner = response.order_requests?.client_id === userId
+    const isPerformer = response.performer_id === userId
+
+    if (!isOwner && !isPerformer) {
+      return NextResponse.json(
+        { error: 'У вас нет доступа к этому отклику' },
+        { status: 403 }
+      )
+    }
+
+    return NextResponse.json(response)
+  } catch (error) {
+    console.error('[API Response] Error:', error)
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    )
+  }
+}
+

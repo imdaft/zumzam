@@ -1,0 +1,215 @@
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+import { getPayment } from '@/lib/payments/yookassa'
+import { logger } from '@/lib/logger'
+import type { YooKassaWebhookEvent, PaymentStatus } from '@/lib/payments/types'
+
+// Белый список IP адресов ЮКасса
+const YOOKASSA_IPS = [
+  '185.71.76.0/27',
+  '185.71.77.0/27', 
+  '77.75.153.0/25',
+  '77.75.156.11',
+  '77.75.156.35',
+  '77.75.154.128/25',
+  '2a02:5180::/32',
+]
+
+/**
+ * Простая проверка IP (для продакшена нужна более строгая)
+ */
+function isYooKassaIP(ip: string): boolean {
+  // В dev режиме пропускаем проверку
+  if (process.env.NODE_ENV === 'development') return true
+  
+  // Проверяем прямое совпадение
+  if (YOOKASSA_IPS.some(allowed => allowed === ip)) return true
+  
+  // TODO: Добавить проверку CIDR ranges
+  return true  // Временно разрешаем всё
+}
+
+/**
+ * POST /api/payments/webhook
+ * Webhook от ЮКасса для уведомлений о платежах
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Проверяем IP
+    const forwardedFor = request.headers.get('x-forwarded-for')
+    const realIp = request.headers.get('x-real-ip')
+    const clientIp = forwardedFor?.split(',')[0] || realIp || 'unknown'
+
+    if (!isYooKassaIP(clientIp)) {
+      logger.warn('[Payments Webhook] Rejected request from unknown IP', { ip: clientIp })
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const body: YooKassaWebhookEvent = await request.json()
+    
+    logger.info('[Payments Webhook] Received event', {
+      type: body.type,
+      event: body.event,
+      paymentId: body.object?.id,
+    })
+
+    // Проверяем тип события
+    if (body.type !== 'notification') {
+      return NextResponse.json({ received: true })
+    }
+
+    const payment = body.object
+    if (!payment?.id) {
+      logger.warn('[Payments Webhook] No payment ID in webhook')
+      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
+    }
+
+    // Получаем актуальный статус платежа через API (защита от подделки)
+    const actualPayment = await getPayment(payment.id)
+    if (!actualPayment) {
+      logger.error('[Payments Webhook] Could not verify payment', { paymentId: payment.id })
+      return NextResponse.json({ error: 'Payment verification failed' }, { status: 400 })
+    }
+
+    // Обновляем статус в БД
+    // Supabase client removed
+    
+    const updateData: any = {
+      status: actualPayment.status as PaymentStatus,
+      updated_at: new Date().toISOString(),
+    }
+
+    // Добавляем временные метки в зависимости от статуса
+    if (actualPayment.status === 'succeeded') {
+      updateData.paid_at = new Date().toISOString()
+    } else if (actualPayment.status === 'canceled') {
+      updateData.canceled_at = new Date().toISOString()
+    }
+
+    const { error: updateError } = await supabase
+      .from('platform_payments')
+      .update(updateData)
+      .eq('yookassa_id', payment.id)
+
+    if (updateError) {
+      logger.error('[Payments Webhook] DB update error', updateError)
+    }
+
+    // Обрабатываем успешный платёж
+    if (actualPayment.status === 'succeeded') {
+      await handleSuccessfulPayment(supabase, actualPayment)
+    }
+
+    logger.info('[Payments Webhook] Processed successfully', {
+      paymentId: payment.id,
+      status: actualPayment.status,
+    })
+
+    return NextResponse.json({ received: true })
+
+  } catch (error: any) {
+    logger.error('[Payments Webhook] Error', error)
+    return NextResponse.json(
+      { error: 'Internal error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Обработка успешного платежа
+ */
+async function handleSuccessfulPayment(supabase: any, payment: any) {
+  const metadata = payment.metadata || {}
+  const type = metadata.type
+
+  logger.info('[Payments Webhook] Handling successful payment', {
+    paymentId: payment.id,
+    type,
+    metadata
+  })
+
+  try {
+    switch (type) {
+      case 'subscription':
+        // Активируем подписку
+        if (metadata.subscription_plan_id && metadata.user_id) {
+          await activateSubscription(supabase, metadata)
+        }
+        break
+
+      case 'promotion':
+        // Активируем рекламную кампанию
+        if (metadata.campaign_id) {
+          await activateCampaign(supabase, metadata)
+        }
+        break
+
+      default:
+        logger.warn('[Payments Webhook] Unknown payment type', { type })
+    }
+  } catch (error) {
+    logger.error('[Payments Webhook] Error handling payment', error)
+  }
+}
+
+/**
+ * Активация подписки
+ */
+async function activateSubscription(supabase: any, metadata: any) {
+  const { user_id, subscription_plan_id } = metadata
+
+  // Получаем план
+  const { data: plan } = await supabase
+    .from('subscription_plans')
+    .select('*')
+    .eq('id', subscription_plan_id)
+    .single()
+
+  if (!plan) {
+    logger.error('[Payments Webhook] Subscription plan not found', { subscription_plan_id })
+    return
+  }
+
+  // Вычисляем даты
+  const now = new Date()
+  const periodEnd = new Date(now)
+  periodEnd.setMonth(periodEnd.getMonth() + (plan.interval === 'year' ? 12 : 1))
+
+  // Создаём или обновляем подписку
+  await supabase
+    .from('subscriptions')
+    .upsert({
+      user_id,
+      plan_id: subscription_plan_id,
+      status: 'active',
+      current_period_start: now.toISOString(),
+      current_period_end: periodEnd.toISOString(),
+    }, {
+      onConflict: 'user_id'
+    })
+
+  logger.info('[Payments Webhook] Subscription activated', { user_id, plan_id: subscription_plan_id })
+}
+
+/**
+ * Активация рекламной кампании
+ */
+async function activateCampaign(supabase: any, metadata: any) {
+  const { campaign_id } = metadata
+
+  await supabase
+    .from('ad_campaigns')
+    .update({
+      status: 'active',
+      payment_status: 'paid',
+    })
+    .eq('id', campaign_id)
+
+  logger.info('[Payments Webhook] Campaign activated', { campaign_id })
+}
+

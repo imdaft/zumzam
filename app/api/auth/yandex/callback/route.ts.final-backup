@@ -1,0 +1,210 @@
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { cookies } from 'next/headers'
+import { SignJWT } from 'jose'
+import crypto from 'crypto'
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const code = searchParams.get('code')
+  const state = searchParams.get('state')
+
+  // Получаем реальный host из заголовков
+  const host = request.headers.get('host') || 'localhost:4000'
+  const protocol = request.headers.get('x-forwarded-proto') || 'http'
+  const origin = `${protocol}://${host}`
+
+  console.log('[Yandex OAuth] Callback received:', { code: !!code, host, origin })
+
+  if (!code) {
+    return NextResponse.redirect(`${origin}/login?error=no_code_provided`)
+  }
+
+  let redirectTo = '/'
+  try {
+    if (state) {
+      const decoded = JSON.parse(Buffer.from(state, 'base64').toString())
+      redirectTo = decoded.redirectTo || '/'
+    }
+  } catch {}
+
+  try {
+    const clientId = process.env.YANDEX_CLIENT_ID
+    const clientSecret = process.env.YANDEX_CLIENT_SECRET
+
+    if (!clientId || !clientSecret) {
+      return NextResponse.redirect(`${origin}/login?error=oauth_not_configured`)
+    }
+
+    // 1. Обмен кода на токен
+    const callbackUrl = `${origin}/api/auth/yandex/callback`
+    const tokenResponse = await fetch('https://oauth.yandex.ru/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: callbackUrl,
+      }),
+    })
+
+    if (!tokenResponse.ok) {
+      console.error('[Yandex OAuth] Token exchange failed:', await tokenResponse.text())
+      return NextResponse.redirect(`${origin}/login?error=token_exchange_failed`)
+    }
+
+    const tokenData = await tokenResponse.json()
+    const accessToken = tokenData.access_token
+
+    if (!accessToken) {
+      return NextResponse.redirect(`${origin}/login?error=no_access_token`)
+    }
+
+    // 2. Получение информации о пользователе
+    const userInfoResponse = await fetch('https://login.yandex.ru/info?format=json', {
+      headers: {
+        Authorization: `OAuth ${accessToken}`,
+      },
+    })
+
+    if (!userInfoResponse.ok) {
+      return NextResponse.redirect(`${origin}/login?error=user_info_failed`)
+    }
+
+    const userInfo = await userInfoResponse.json()
+    const email = userInfo.default_email || userInfo.emails?.[0]
+
+    if (!email) {
+      return NextResponse.redirect(`${origin}/login?error=no_email`)
+    }
+
+    console.log('[Yandex OAuth] User info received:', { email, name: userInfo.real_name })
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/2f44af11-d8bf-40e4-ab90-d93dad5b63df',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'callback/route.ts:90',message:'User info from Yandex',data:{email,fullName:userInfo.real_name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+
+    const fullName = userInfo.real_name || userInfo.display_name || 'Пользователь'
+    const avatarUrl = userInfo.default_avatar_id
+      ? `https://avatars.yandex.net/get-yapic/${userInfo.default_avatar_id}/islands-200`
+      : null
+
+    // 3. Найти или создать пользователя в БД через Prisma
+    let user = await prisma.users.findFirst({
+      where: { email },
+    })
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/2f44af11-d8bf-40e4-ab90-d93dad5b63df',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'callback/route.ts:103',message:'User found in DB',data:{found:!!user,userId:user?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+
+    if (user) {
+      console.log('[Yandex OAuth] Existing user found:', user.id)
+      // Обновляем аватар и имя
+      user = await prisma.users.update({
+        where: { id: user.id },
+        data: {
+          full_name: fullName || user.full_name,
+          avatar_url: avatarUrl || user.avatar_url,
+        },
+      })
+    } else {
+      console.log('[Yandex OAuth] Creating new user...')
+      user = await prisma.users.create({
+        data: {
+          id: crypto.randomUUID(),
+          email,
+          full_name: fullName,
+          avatar_url: avatarUrl,
+          role: 'parent',
+        },
+      })
+      console.log('[Yandex OAuth] New user created:', user.id)
+    }
+
+    // 4. Создаём JWT сессию
+    const secret = new TextEncoder().encode(
+      process.env.JWT_SECRET || 'your-secret-key-change-me'
+    )
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/2f44af11-d8bf-40e4-ab90-d93dad5b63df',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'callback/route.ts:127',message:'JWT secret loaded',data:{hasSecret:!!process.env.JWT_SECRET,secretLength:process.env.JWT_SECRET?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+
+    const accessTokenJWT = await new SignJWT({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      type: 'access',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime('1h')
+      .sign(secret)
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/2f44af11-d8bf-40e4-ab90-d93dad5b63df',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'callback/route.ts:143',message:'Access JWT generated',data:{tokenLength:accessTokenJWT.length,userId:user.id,email:user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+
+    const refreshTokenJWT = await new SignJWT({
+      userId: user.id,
+      type: 'refresh',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime('7d')
+      .sign(secret)
+
+    // 5. Устанавливаем cookies
+    const cookieStore = await cookies()
+    const response = NextResponse.redirect(`${origin}${redirectTo}`)
+
+    // Access token (1 hour)
+    response.cookies.set('auth-token', accessTokenJWT, {
+      httpOnly: true,
+      secure: protocol === 'https',
+      sameSite: 'lax',
+      maxAge: 60 * 60, // 1 hour
+      path: '/',
+    })
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/2f44af11-d8bf-40e4-ab90-d93dad5b63df',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'callback/route.ts:165',message:'Auth cookie set',data:{cookieName:'auth-token',tokenLength:accessTokenJWT.length,httpOnly:true,secure:protocol==='https'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
+    // Refresh token (7 days)
+    response.cookies.set('refresh-token', refreshTokenJWT, {
+      httpOnly: true,
+      secure: protocol === 'https',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
+    })
+
+    // User info (для клиентского JS, не httpOnly)
+    response.cookies.set('user-info', JSON.stringify({
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name,
+      avatar_url: user.avatar_url,
+      role: user.role,
+    }), {
+      httpOnly: false,
+      secure: protocol === 'https',
+      sameSite: 'lax',
+      maxAge: 60 * 60, // 1 hour
+      path: '/',
+    })
+
+    console.log('[Yandex OAuth] ✅ Session created, cookies set, redirecting to:', redirectTo)
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/2f44af11-d8bf-40e4-ab90-d93dad5b63df',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'callback/route.ts:200',message:'Redirecting with cookies',data:{redirectTo,cookiesSet:['auth-token','refresh-token','user-info']},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    return response
+
+  } catch (error: any) {
+    console.error('[Yandex OAuth] Callback error:', error)
+    return NextResponse.redirect(
+      `${origin}/login?error=oauth_exception&details=${encodeURIComponent(error.message || 'unknown')}`
+    )
+  }
+}

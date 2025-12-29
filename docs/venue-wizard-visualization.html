@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дерево создания профиля: Площадка</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            text-align: center;
+            color: #1a1a1a;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 16px;
+        }
+
+        .tree-container {
+            position: relative;
+            min-height: 1200px;
+            overflow: auto;
+            padding: 40px 0;
+            background: linear-gradient(to bottom, #f9fafb 0%, #ffffff 100%);
+            border-radius: 16px;
+        }
+
+        /* Стили для узлов дерева */
+        .node {
+            position: absolute;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .node:hover {
+            transform: scale(1.05);
+            z-index: 20;
+        }
+
+        .node.active {
+            transform: scale(1.1);
+            z-index: 30;
+        }
+
+        .node-box {
+            background: white;
+            border: 3px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 16px 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            min-width: 200px;
+            max-width: 280px;
+        }
+
+        .node.active .node-box {
+            border-color: #f97316;
+            box-shadow: 0 8px 24px rgba(249, 115, 22, 0.3);
+        }
+
+        .node.level-0 .node-box {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+            color: white;
+            border-color: #ff6b6b;
+            font-weight: bold;
+            font-size: 18px;
+            padding: 24px;
+            min-width: 280px;
+        }
+
+        .node.level-1 .node-box {
+            background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+            color: white;
+            border-color: #4ecdc4;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .node.level-2 .node-box {
+            background: #fff5e5;
+            border-color: #ffd3a5;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .node.level-3 .node-box {
+            background: #f0f9ff;
+            border-color: #93c5fd;
+            color: #333;
+            font-size: 12px;
+            padding: 10px 14px;
+            min-width: 180px;
+            max-width: 220px;
+        }
+
+        .node-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .node-description {
+            font-size: 12px;
+            opacity: 0.9;
+            line-height: 1.4;
+        }
+
+        .node-blocks {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed rgba(0,0,0,0.1);
+        }
+
+        .block-item {
+            font-size: 10px;
+            padding: 3px 6px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 4px;
+            margin: 3px 0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .block-item::before {
+            content: "📋";
+            font-size: 9px;
+        }
+        
+        .node.level-3 .node-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .node.level-3 .node-description {
+            font-size: 10px;
+            opacity: 0.7;
+        }
+
+        /* Стрелки */
+        .connector {
+            position: absolute;
+            stroke: #cbd5e1;
+            stroke-width: 2;
+            fill: none;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+
+        .connector.active {
+            stroke: #f97316;
+            stroke-width: 3;
+        }
+
+        /* Легенда */
+        .legend {
+            margin-top: 40px;
+            padding: 24px;
+            background: #f9fafb;
+            border-radius: 16px;
+            border: 2px solid #e5e7eb;
+        }
+
+        .legend h3 {
+            margin-bottom: 16px;
+            color: #1a1a1a;
+            font-size: 18px;
+        }
+
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e5e7eb;
+        }
+
+        .legend-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: 2px solid;
+        }
+
+        /* Информационная панель */
+        .info-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            max-width: 350px;
+            z-index: 1000;
+            border: 2px solid #f97316;
+        }
+
+        .info-panel h3 {
+            color: #f97316;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+
+        .info-panel .path {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+
+        .info-panel .steps {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .info-panel .steps-item {
+            padding: 4px 0;
+            border-left: 2px solid #e5e7eb;
+            padding-left: 12px;
+            margin: 4px 0;
+        }
+
+        .info-panel .steps-item.active {
+            border-left-color: #f97316;
+            color: #f97316;
+            font-weight: 600;
+        }
+
+        /* Кнопки управления */
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            background: #f97316;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 0 8px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #ea580c;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏢 Дерево создания профиля: ПЛОЩАДКА</h1>
+        <p class="subtitle">Интерактивная визуализация всех разветвлений и шагов</p>
+
+        <div class="controls">
+            <button class="btn btn-secondary" onclick="resetView()">🔄 Сбросить</button>
+            <button class="btn" onclick="highlightPath('kids_center')">🔍 Детский центр</button>
+            <button class="btn" onclick="highlightPath('loft')">🔍 Лофт</button>
+            <button class="btn" onclick="highlightPath('cafe')">🔍 Кафе</button>
+        </div>
+
+        <div class="info-panel" id="infoPanel">
+            <h3>📍 Текущий путь</h3>
+            <div class="path" id="currentPath">Выберите узел для просмотра пути</div>
+            <div class="steps" id="stepsInfo"></div>
+        </div>
+
+        <div class="tree-container" id="treeContainer">
+            <svg id="connectors" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></svg>
+        </div>
+
+        <div class="legend">
+            <h3>🎨 Легенда</h3>
+            <div class="legend-items">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);"></div>
+                    <div>
+                        <strong>Уровень 0:</strong> Категория
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);"></div>
+                    <div>
+                        <strong>Уровень 1:</strong> Подтип площадки
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fff5e5; border: 2px solid #ffd3a5;"></div>
+                    <div>
+                        <strong>Уровень 2:</strong> Универсальные шаги
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f0f9ff; border: 2px solid #93c5fd;"></div>
+                    <div>
+                        <strong>Уровень 3:</strong> Специфичные блоки
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Данные дерева для площадки
+        const venueTree = {
+            category: {
+                id: 'venue',
+                title: '🏢 ПЛОЩАДКА',
+                description: 'Категория площадок',
+                x: 700,
+                y: 50,
+                level: 0
+            },
+            subtypes: [
+                {
+                    id: 'kids_center',
+                    title: 'Детский центр',
+                    description: 'Игровая комната, развивающие зоны',
+                    x: 150,
+                    y: 200,
+                    level: 1,
+                    specificBlocks: [
+                        'Вместимость (мин/макс)',
+                        'Площадь (м²)',
+                        'Возрастные зоны (0-3, 3-7, 7+)',
+                        'Аниматорская комната',
+                        'Оборудование (батут, бассейн, лабиринт)',
+                        'Кухня/Кейтеринг',
+                        'Техника (проектор, звук)',
+                        'Парковка'
+                    ]
+                },
+                {
+                    id: 'loft',
+                    title: 'Лофт / Студия',
+                    description: 'Современное пространство для событий',
+                    x: 450,
+                    y: 200,
+                    level: 1,
+                    specificBlocks: [
+                        'Площадь (м²)',
+                        'Интерьер (стиль, фото)',
+                        'Мебель (столы, стулья)',
+                        'Техника (проектор, экран, звук, свет)',
+                        'Кухня (полная/мини)',
+                        'Вместимость',
+                        'Зоны (зал, раздевалка)',
+                        'Особенности (панорамные окна, циклорама)',
+                        'Парковка'
+                    ]
+                },
+                {
+                    id: 'cafe',
+                    title: 'Кафе / Ресторан',
+                    description: 'Заведение общепита',
+                    x: 750,
+                    y: 200,
+                    level: 1,
+                    specificBlocks: [
+                        'Кухня (меню для детей/взрослых)',
+                        'Меню (детское, взрослое, напитки, торты)',
+                        'Зал (отдельный зал, вместимость)',
+                        'Вместимость',
+                        'Техника (проектор, звук)',
+                        'Особенности (детская зона, аниматор)',
+                        'Парковка'
+                    ]
+                },
+                {
+                    id: 'entertainment_center',
+                    title: 'Парк развлечений',
+                    description: 'Аттракционы и активные игры',
+                    x: 1050,
+                    y: 200,
+                    level: 1,
+                    specificBlocks: [
+                        'Аттракционы (список, возрастные ограничения)',
+                        'Территория (га или м²)',
+                        'Зоны (детская, семейная, экстремальная)',
+                        'Кафе/Еда',
+                        'Особенности (крытые павильоны, всесезонность)',
+                        'Вместимость',
+                        'Парковка'
+                    ]
+                },
+                {
+                    id: 'outdoor',
+                    title: 'Открытая площадка',
+                    description: 'Природная территория',
+                    x: 1350,
+                    y: 200,
+                    level: 1,
+                    specificBlocks: [
+                        'Тент/Навес (защита от дождя/солнца)',
+                        'Площадь (м²)',
+                        'Инфраструктура (электричество, вода, туалет)',
+                        'Покрытие (газон, плитка, асфальт)',
+                        'Погодные условия (план Б)',
+                        'Вместимость',
+                        'Особенности (мангал, детская площадка)',
+                        'Парковка'
+                    ]
+                },
+                {
+                    id: 'other',
+                    title: 'Другое',
+                    description: 'Особый тип площадки',
+                    x: 1650,
+                    y: 200,
+                    level: 1,
+                    specificBlocks: [
+                        'Тип площадки (описание)',
+                        'Особенности',
+                        'Вместимость',
+                        'Площадь',
+                        'Инфраструктура',
+                        'Техника/Оборудование'
+                    ]
+                }
+            ],
+            universalSteps: [
+                {
+                    id: 'basic_info',
+                    title: 'Основная информация',
+                    description: 'Название, город, описание, адрес',
+                    x: 300,
+                    y: 500,
+                    level: 2,
+                    blocks: ['Название', 'Город', 'Адрес', 'Краткое описание']
+                },
+                {
+                    id: 'visuals',
+                    title: 'Визуал',
+                    description: 'Логотип, обложка',
+                    x: 600,
+                    y: 500,
+                    level: 2,
+                    blocks: ['Логотип', 'Обложка']
+                },
+                {
+                    id: 'characteristics',
+                    title: 'Характеристики',
+                    description: 'Специфичные параметры',
+                    x: 900,
+                    y: 500,
+                    level: 2,
+                    blocks: ['Зависят от подтипа']
+                },
+                {
+                    id: 'media',
+                    title: 'Медиа',
+                    description: 'Фото и видео',
+                    x: 1200,
+                    y: 500,
+                    level: 2,
+                    blocks: ['Фотографии', 'Видео']
+                },
+                {
+                    id: 'services',
+                    title: 'Услуги',
+                    description: 'Список услуг',
+                    x: 300,
+                    y: 700,
+                    level: 2,
+                    blocks: ['Услуги с ценами']
+                },
+                {
+                    id: 'branches',
+                    title: 'Филиалы',
+                    description: 'Дополнительные адреса',
+                    x: 600,
+                    y: 700,
+                    level: 2,
+                    blocks: ['Адреса филиалов']
+                },
+                {
+                    id: 'contacts',
+                    title: 'Контакты',
+                    description: 'Телефон, email, сайт',
+                    x: 900,
+                    y: 700,
+                    level: 2,
+                    blocks: ['Телефон', 'Email', 'Сайт']
+                },
+                {
+                    id: 'faq',
+                    title: 'FAQ',
+                    description: 'Частые вопросы',
+                    x: 1200,
+                    y: 700,
+                    level: 2,
+                    blocks: ['Вопрос-ответ']
+                },
+                {
+                    id: 'social',
+                    title: 'Соцсети',
+                    description: 'Ссылки на соцсети',
+                    x: 1500,
+                    y: 700,
+                    level: 2,
+                    blocks: ['VK', 'Instagram', 'Telegram']
+                },
+                {
+                    id: 'reviews',
+                    title: 'Отзывы',
+                    description: 'Настройки отзывов',
+                    x: 300,
+                    y: 900,
+                    level: 2,
+                    blocks: ['Источник отзывов']
+                },
+                {
+                    id: 'final',
+                    title: 'Финальная проверка',
+                    description: 'Чеклист готовности',
+                    x: 900,
+                    y: 900,
+                    level: 2,
+                    blocks: ['Проверка всех полей']
+                }
+            ]
+        }
+
+        let activePath = []
+        let nodes = []
+
+        // Создание узлов дерева
+        function createTree() {
+            const container = document.getElementById('treeContainer')
+            const svg = document.getElementById('connectors')
+            
+            // Очистка
+            container.innerHTML = ''
+            svg.innerHTML = ''
+            nodes = []
+            
+            // Центральный узел - категория
+            const categoryNode = createNode(venueTree.category, container)
+            nodes.push({ ...venueTree.category, element: categoryNode })
+            
+            // Подтипы
+            venueTree.subtypes.forEach((subtype, index) => {
+                const subtypeNode = createNode(subtype, container)
+                nodes.push({ ...subtype, element: subtypeNode })
+                
+                // Соединитель от категории к подтипу
+                drawConnector(
+                    svg,
+                    venueTree.category.x + 140,
+                    venueTree.category.y + 80,
+                    subtype.x + 140,
+                    subtype.y + 20,
+                    `category-to-subtype-${subtype.id}`
+                )
+                
+                // Специфичные блоки для подтипа - размещаем справа от подтипа
+                subtype.specificBlocks.forEach((block, blockIndex) => {
+                    const blocksPerColumn = 4
+                    const column = Math.floor(blockIndex / blocksPerColumn)
+                    const row = blockIndex % blocksPerColumn
+                    
+                    const blockX = subtype.x + 320 + column * 220
+                    const blockY = subtype.y + row * 85
+                    
+                    const blockNode = {
+                        id: `${subtype.id}_block_${blockIndex}`,
+                        title: block.split('(')[0].trim(),
+                        description: block.includes('(') ? block.split('(')[1].replace(')', '') : '',
+                        x: blockX,
+                        y: blockY,
+                        level: 3,
+                        parentSubtype: subtype.id
+                    }
+                    
+                    const blockElement = createNode(blockNode, container)
+                    nodes.push({ ...blockNode, element: blockElement })
+                    
+                    // Соединитель от подтипа к блоку (только для первого блока в колонке)
+                    if (row === 0) {
+                        drawConnector(
+                            svg,
+                            subtype.x + 280,
+                            subtype.y + 40,
+                            blockX,
+                            blockY + 20,
+                            `subtype-to-block-${subtype.id}-col${column}`,
+                            true
+                        )
+                    }
+                })
+                
+                // Универсальные шаги
+                venueTree.universalSteps.forEach((step) => {
+                    const stepNode = createNode(step, container)
+                    nodes.push({ ...step, element: stepNode })
+                    
+                    // Соединитель от подтипа к шагу характеристик
+                    if (step.id === 'characteristics') {
+                        drawConnector(
+                            svg,
+                            subtype.x + 140,
+                            subtype.y + 80,
+                            step.x + 140,
+                            step.y + 20,
+                            `subtype-to-${step.id}-${subtype.id}`,
+                            true
+                        )
+                    }
+                })
+            })
+            
+            // Соединители между универсальными шагами
+            const stepOrder = ['basic_info', 'visuals', 'characteristics', 'media', 'services', 'branches', 'contacts', 'faq', 'social', 'reviews', 'final']
+            for (let i = 0; i < stepOrder.length - 1; i++) {
+                const current = venueTree.universalSteps.find(s => s.id === stepOrder[i])
+                const next = venueTree.universalSteps.find(s => s.id === stepOrder[i + 1])
+                if (current && next) {
+                    drawConnector(
+                        svg,
+                        current.x + 140,
+                        current.y + 80,
+                        next.x + 140,
+                        next.y + 20,
+                        `step-${current.id}-to-${next.id}`
+                    )
+                }
+            }
+        }
+
+        function createNode(nodeData, container) {
+            const node = document.createElement('div')
+            node.className = `node level-${nodeData.level}`
+            node.style.left = `${nodeData.x}px`
+            node.style.top = `${nodeData.y}px`
+            node.dataset.id = nodeData.id
+            
+            const box = document.createElement('div')
+            box.className = 'node-box'
+            
+            const title = document.createElement('div')
+            title.className = 'node-title'
+            title.textContent = nodeData.title
+            
+            const desc = document.createElement('div')
+            desc.className = 'node-description'
+            desc.textContent = nodeData.description
+            
+            box.appendChild(title)
+            box.appendChild(desc)
+            
+            if (nodeData.blocks) {
+                const blocks = document.createElement('div')
+                blocks.className = 'node-blocks'
+                nodeData.blocks.forEach(block => {
+                    const blockItem = document.createElement('div')
+                    blockItem.className = 'block-item'
+                    blockItem.textContent = block
+                    blocks.appendChild(blockItem)
+                })
+                box.appendChild(blocks)
+            }
+            
+            if (nodeData.specificBlocks) {
+                const blocks = document.createElement('div')
+                blocks.className = 'node-blocks'
+                nodeData.specificBlocks.slice(0, 3).forEach(block => {
+                    const blockItem = document.createElement('div')
+                    blockItem.className = 'block-item'
+                    blockItem.textContent = block
+                    blocks.appendChild(blockItem)
+                })
+                if (nodeData.specificBlocks.length > 3) {
+                    const more = document.createElement('div')
+                    more.className = 'block-item'
+                    more.textContent = `+ ещё ${nodeData.specificBlocks.length - 3}...`
+                    blocks.appendChild(more)
+                }
+                box.appendChild(blocks)
+            }
+            
+            node.appendChild(box)
+            container.appendChild(node)
+            
+            // Обработчик клика
+            node.addEventListener('click', () => {
+                highlightNode(nodeData.id)
+            })
+            
+            return node
+        }
+
+        function drawConnector(svg, x1, y1, x2, y2, id, dashed = false) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+            line.setAttribute('x1', x1)
+            line.setAttribute('y1', y1)
+            line.setAttribute('x2', x2)
+            line.setAttribute('y2', y2)
+            line.setAttribute('class', 'connector')
+            line.setAttribute('data-id', id)
+            if (dashed) {
+                line.setAttribute('stroke-dasharray', '5,5')
+            }
+            svg.appendChild(line)
+        }
+
+        function highlightNode(nodeId) {
+            // Сброс предыдущих выделений
+            document.querySelectorAll('.node').forEach(n => n.classList.remove('active'))
+            document.querySelectorAll('.connector').forEach(c => c.classList.remove('active'))
+            
+            const node = nodes.find(n => n.id === nodeId)
+            if (!node) return
+            
+            // Выделение узла
+            const nodeElement = document.querySelector(`[data-id="${nodeId}"]`)
+            if (nodeElement) {
+                nodeElement.classList.add('active')
+            }
+            
+            // Построение пути
+            activePath = []
+            buildPath(node)
+            
+            // Обновление панели информации
+            updateInfoPanel()
+        }
+
+        function buildPath(node) {
+            if (!node) return
+            
+            activePath.unshift(node)
+            
+            // Найти родителя
+            if (node.level === 3 && node.parentSubtype) {
+                const parent = nodes.find(n => n.id === node.parentSubtype)
+                if (parent) buildPath(parent)
+            } else if (node.level === 1) {
+                const category = nodes.find(n => n.id === 'venue')
+                if (category) buildPath(category)
+            }
+            
+            // Выделение соединителей
+            highlightConnectors()
+            
+            // Выделение специфичных блоков для подтипа
+            if (node.level === 1) {
+                nodes.filter(n => n.level === 3 && n.parentSubtype === node.id)
+                    .forEach(n => {
+                        const el = document.querySelector(`[data-id="${n.id}"]`)
+                        if (el) el.classList.add('active')
+                    })
+            }
+        }
+
+        function highlightConnectors() {
+            // Выделяем соединители в пути
+            for (let i = 0; i < activePath.length - 1; i++) {
+                const current = activePath[i]
+                const next = activePath[i + 1]
+                
+                // Ищем соединитель между узлами
+                const connectors = document.querySelectorAll('.connector')
+                connectors.forEach(connector => {
+                    const connectorId = connector.getAttribute('data-id')
+                    if (connectorId && (
+                        connectorId.includes(current.id) || 
+                        connectorId.includes(next.id)
+                    )) {
+                        connector.classList.add('active')
+                    }
+                })
+            }
+        }
+
+        function updateInfoPanel() {
+            const pathEl = document.getElementById('currentPath')
+            const stepsEl = document.getElementById('stepsInfo')
+            
+            if (activePath.length === 0) {
+                pathEl.textContent = 'Выберите узел для просмотра пути'
+                stepsEl.innerHTML = ''
+                return
+            }
+            
+            // Формируем путь
+            const pathText = activePath.map(n => n.title).join(' → ')
+            pathEl.textContent = pathText
+            
+            // Формируем шаги
+            const steps = [
+                '1. Категория: Площадка',
+                '2. Подтип: ' + (activePath.find(n => n.level === 1)?.title || 'выберите'),
+                '3. Основная информация',
+                '4. Визуал',
+                '5. Характеристики (специфичные)',
+                '6. Медиа',
+                '7. Услуги',
+                '8. Филиалы',
+                '9. Контакты',
+                '10. FAQ',
+                '11. Соцсети',
+                '12. Отзывы',
+                '13. Финальная проверка'
+            ]
+            
+            const currentStepIndex = activePath.length > 0 ? Math.min(activePath.length, steps.length - 1) : 0
+            
+            stepsEl.innerHTML = steps.map((step, index) => {
+                const isActive = index <= currentStepIndex
+                return `<div class="steps-item ${isActive ? 'active' : ''}">${step}</div>`
+            }).join('')
+        }
+
+        function highlightPath(subtypeId) {
+            const subtype = nodes.find(n => n.id === subtypeId)
+            if (subtype) {
+                highlightNode(subtypeId)
+                // Скролл к узлу
+                subtype.element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+        }
+
+        function resetView() {
+            document.querySelectorAll('.node').forEach(n => n.classList.remove('active'))
+            document.querySelectorAll('.connector').forEach(c => c.classList.remove('active'))
+            activePath = []
+            updateInfoPanel()
+        }
+
+        // Инициализация
+        createTree()
+    </script>
+</body>
+</html>
+

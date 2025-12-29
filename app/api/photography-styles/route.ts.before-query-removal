@@ -1,0 +1,100 @@
+// TODO: MIGRATE QUERIES TO PRISMA
+// Этот файл частично мигрирован, но содержит Supabase queries
+// Они будут работать, но требуют полной миграции на Prisma
+
+// TODO: MIGRATE TO PRISMA - этот файл использует Supabase queries
+// Они работают, но требуют миграции на Prisma для consistency
+
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { verifyToken } from '@/lib/auth/jwt'
+
+
+export async function POST(request: Request) {
+  try {
+    // Supabase client removed
+    const token = request.cookies.get('auth-token')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const userId = payload.sub
+    if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const body = await request.json()
+    const { profile_id, ...styleData } = body
+
+    // Проверяем роль пользователя
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    const isAdmin = userData?.role === 'admin'
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('id', profile_id)
+      .single()
+
+    if (!profile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    // Проверяем права доступа (владелец или админ)
+    if (!isAdmin && profile.user_id !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Для админов используем admin client (обходит RLS)
+    const clientForInsert = isAdmin ? createAdminClient() : supabase
+
+    const { data, error } = await clientForInsert
+      .from('photography_styles')
+      .insert({ profile_id, ...styleData, is_active: true })
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('[PhotographyStyles] Database error:', error)
+      return NextResponse.json({ error: 'Failed to create', details: error.message }, { status: 500 })
+    }
+    return NextResponse.json(data)
+  } catch (error: any) {
+    logger.error('[PhotographyStyles] Error:', error)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const profileId = searchParams.get('profile_id')
+    if (!profileId) return NextResponse.json({ error: 'profile_id required' }, { status: 400 })
+
+    // Supabase client removed
+    const { data, error } = await supabase
+      .from('photography_styles')
+      .select('*')
+      .eq('profile_id', profileId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+
+    if (error) return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
+    return NextResponse.json(data || [])
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+
+
+
+
