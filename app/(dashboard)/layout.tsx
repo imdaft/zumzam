@@ -324,81 +324,8 @@ export default function DashboardLayout({
     return () => window.removeEventListener('notification-read', onNotificationRead)
   }, [notificationsOpen])
 
-  // Real-time подписка на сообщения и уведомления
-  useEffect(() => {
-    if (!user) return
-
-    // Отключаем WebSocket подписки для локальной разработки с dummy credentials
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    if (supabaseUrl.includes('dummy-url')) {
-      console.log('[Dashboard] Skipping Supabase realtime subscriptions (dummy URL)')
-      return
-    }
-
-    const supabase = createClient()
-
-    // Подписываемся на изменения в messages (INSERT и UPDATE)
-    const messagesChannel = supabase
-      .channel('messages-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-        },
-        (payload) => {
-          const newMessage = payload.new as any
-          // Обновляем счётчик только если сообщение НЕ от текущего пользователя
-          if (newMessage.sender_id !== user.id) {
-            loadRecentMessages()
-            loadCounts()
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-        },
-        (payload) => {
-          // Когда сообщение помечается как прочитанное — обновляем счётчик
-          const updated = payload.new as any
-          const old = payload.old as any
-          // Если read_at изменилось (было null, стало не null)
-          if (!old.read_at && updated.read_at) {
-            loadRecentMessages()
-            loadCounts()
-          }
-        }
-      )
-      .subscribe()
-
-    // Подписываемся на новые уведомления
-    const notificationsChannel = supabase
-      .channel('notifications-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          loadRecentNotifications()
-          loadCounts()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(messagesChannel)
-      supabase.removeChannel(notificationsChannel)
-    }
-  }, [user?.id])
+  // Real-time подписки отключены (Supabase больше не используется)
+  // Для обновления данных используется polling через loadRecentMessages/loadRecentNotifications
 
   // Отмечаем раздел просмотренным при переходе
   useEffect(() => {

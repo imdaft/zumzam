@@ -37,6 +37,7 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form'
+import { getCurrentUser } from '@/lib/auth/get-current-user'
 
 // Схема валидации формы заявки
 const claimSchema = z.object({
@@ -80,8 +81,6 @@ export default function ClaimProfilePage({ params }: { params: Promise<{ slug: s
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
-  const supabase = createClient()
-
   const form = useForm<ClaimInput>({
     resolver: zodResolver(claimSchema),
     defaultValues: {
@@ -113,19 +112,17 @@ export default function ClaimProfilePage({ params }: { params: Promise<{ slug: s
         setCurrentUser(user)
         setIsAuthenticated(!!user)
 
-        // Загружаем профиль
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, slug, display_name, description, bio, city, address, rating, reviews_count, main_photo, cover_photo, logo, category, claim_status, user_id')
-          .eq('slug', slug)
-          .single()
+        // Загружаем профиль через API
+        const profileResponse = await fetch(`/api/profiles/by-slug/${slug}`)
+        const profileResult = await profileResponse.json()
 
-        if (profileError || !profileData) {
-          setError('Профиль не найден')
+        if (!profileResponse.ok || !profileResult.profile) {
+          setError(profileResult.error || 'Профиль не найден')
           setIsLoading(false)
           return
         }
 
+        const profileData = profileResult.profile
         setProfile(profileData)
 
         // Если пользователь авторизован, заполняем email и проверяем существующую заявку
@@ -133,15 +130,15 @@ export default function ClaimProfilePage({ params }: { params: Promise<{ slug: s
           form.setValue('contact_email', user.email || '')
 
           // Проверяем, есть ли уже заявка от этого пользователя
-          const { data: existingRequestData } = await supabase
-            .from('profile_claim_requests')
-            .select('*')
-            .eq('profile_id', profileData.id)
-            .eq('user_id', user.id)
-            .single()
-
-          if (existingRequestData) {
-            setExistingRequest(existingRequestData)
+          const claimResponse = await fetch('/api/claim')
+          if (claimResponse.ok) {
+            const claimResult = await claimResponse.json()
+            const existingRequestData = claimResult.claim_requests?.find(
+              (req: any) => req.profile_id === profileData.id && req.user_id === user.id
+            )
+            if (existingRequestData) {
+              setExistingRequest(existingRequestData)
+            }
           }
         }
       } catch (err) {
@@ -153,7 +150,7 @@ export default function ClaimProfilePage({ params }: { params: Promise<{ slug: s
     }
 
     loadData()
-  }, [slug, supabase, form])
+  }, [slug, form])
 
   const onSubmit = async (data: ClaimInput) => {
     if (!profile || !currentUser) return

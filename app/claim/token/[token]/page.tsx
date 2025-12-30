@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { getCurrentUser } from '@/lib/auth/get-current-user'
 
 interface Profile {
   id: string
@@ -42,8 +43,6 @@ export default function ClaimByTokenPage({ params }: { params: Promise<{ token: 
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
-  const supabase = createClient()
-
   // Получаем токен из params
   useEffect(() => {
     params.then(p => setToken(p.token))
@@ -63,18 +62,17 @@ export default function ClaimByTokenPage({ params }: { params: Promise<{ token: 
         setCurrentUser(user)
         setIsAuthenticated(!!user)
 
-        // Загружаем профиль по токену
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, slug, display_name, description, city, main_photo, logo, category, claim_status, user_id')
-          .eq('claim_token', token)
-          .single()
+        // Загружаем профиль по токену через API
+        const response = await fetch(`/api/claim/by-token?token=${encodeURIComponent(token)}`)
+        const result = await response.json()
 
-        if (profileError || !profileData) {
-          setError('Ссылка недействительна или профиль не найден')
+        if (!response.ok || !result.profile) {
+          setError(result.error || 'Ссылка недействительна или профиль не найден')
           setIsLoading(false)
           return
         }
+
+        const profileData = result.profile
 
         // Проверяем, не забран ли уже профиль
         if (profileData.user_id || profileData.claim_status === 'claimed') {
@@ -94,7 +92,7 @@ export default function ClaimByTokenPage({ params }: { params: Promise<{ token: 
     }
 
     loadData()
-  }, [token, supabase])
+  }, [token])
 
   // Принятие профиля
   const handleClaim = async () => {
