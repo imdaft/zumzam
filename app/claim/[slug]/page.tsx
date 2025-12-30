@@ -37,7 +37,6 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form'
-import { getCurrentUser } from '@/lib/auth/get-current-user'
 
 // Схема валидации формы заявки
 const claimSchema = z.object({
@@ -107,10 +106,17 @@ export default function ClaimProfilePage({ params }: { params: Promise<{ slug: s
       setError(null)
 
       try {
-        // Проверяем авторизацию
-        const user = await getCurrentUser()
-        setCurrentUser(user)
-        setIsAuthenticated(!!user)
+        // Проверяем авторизацию через API
+        const userResponse = await fetch('/api/users/me')
+        if (userResponse.ok) {
+          const userData = await userResponse.json()
+          const user = userData?.data || null
+          setCurrentUser(user)
+          setIsAuthenticated(!!user)
+        } else {
+          setCurrentUser(null)
+          setIsAuthenticated(false)
+        }
 
         // Загружаем профиль через API
         const profileResponse = await fetch(`/api/profiles/by-slug/${slug}`)

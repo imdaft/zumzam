@@ -17,7 +17,6 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { getCurrentUser } from '@/lib/auth/get-current-user'
 
 interface Profile {
   id: string
@@ -57,10 +56,17 @@ export default function ClaimByTokenPage({ params }: { params: Promise<{ token: 
       setError(null)
 
       try {
-        // Проверяем авторизацию
-        const user = await getCurrentUser()
-        setCurrentUser(user)
-        setIsAuthenticated(!!user)
+        // Проверяем авторизацию через API
+        const userResponse = await fetch('/api/users/me')
+        if (userResponse.ok) {
+          const userData = await userResponse.json()
+          const user = userData?.data || null
+          setCurrentUser(user)
+          setIsAuthenticated(!!user)
+        } else {
+          setCurrentUser(null)
+          setIsAuthenticated(false)
+        }
 
         // Загружаем профиль по токену через API
         const response = await fetch(`/api/claim/by-token?token=${encodeURIComponent(token)}`)
